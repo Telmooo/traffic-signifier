@@ -4,6 +4,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from skimage.exposure import is_low_contrast
 
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm, colors
+
+
 def display_color_hist(img):
     """Display color histogram
 
@@ -64,7 +68,42 @@ def hist_equalization(lowContrast):
     
     return final_he
     
+
+def rgb_3d_plot(rgb_img):
+    (r,g,b) = cv.split(rgb_img)
     
+    fig = plt.figure()
+    axis = fig.add_subplot(1,1,1, projection="3d")
+    
+    pixel_colors = rgb_img.reshape((np.shape(rgb_img)[0]*np.shape(rgb_img)[1], 3))
+    norm = colors.Normalize(vmin=-1.,vmax=1.)
+    norm.autoscale(pixel_colors)
+    pixel_colors = norm(pixel_colors).tolist()
+    
+    axis.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors, marker=".")
+    axis.set_xlabel("Red")
+    axis.set_ylabel("Green")
+    axis.set_zlabel("Blue")
+    
+    plt.show()
+    
+def hsv_3d_plot(hsv_img):
+    (h,s,v) = cv.split(hsv_img)
+        
+    fig = plt.figure()
+    axis = fig.add_subplot(1,1,1, projection="3d")
+    
+    pixel_colors = hsv_img.reshape((np.shape(hsv_img)[0]*np.shape(hsv_img)[1], 3))
+    norm = colors.Normalize(vmin=-1.,vmax=1.)
+    norm.autoscale(pixel_colors)
+    pixel_colors = norm(pixel_colors).tolist()
+    
+    axis.scatter(h.flatten(), s.flatten(), v.flatten(), facecolors=pixel_colors, marker=".")
+    axis.set_xlabel("Hue")
+    axis.set_ylabel("Saturation")
+    axis.set_zlabel("Value")
+    
+    plt.show()
     
 
 
@@ -73,22 +112,25 @@ if __name__ == '__main__':
     
     dataDir = Path("./data/images")
 
-    img_path = str(dataDir / "road595.png")
+    img_path = str(dataDir / "road153.png")
     img = cv.imread(img_path)
     gray = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
     display_color_hist(img)
     show_img(img, "original")
-
-    # TODO: perguntar se podemos usar esta função
-    if (is_low_contrast(gray, CONTRAST_THRESH)):
-        print("Low Constrast Image")
+    
+    # hsv  = cv.cvtColor(img, cv.COLOR_BGR2HSV_FULL)
+    # hsv_3d_plot(hsv)
+    # # TODO: perguntar se podemos usar esta função
+    # if (is_low_contrast(gray, CONTRAST_THRESH)):
+    #     print("Low Constrast Image")
         
-        clahe_img = clahe_equalization(img)
-        show_img(clahe_img, "CLAHE")
+    #     clahe_img = clahe_equalization(img)
+    #     show_img(clahe_img, "CLAHE")
         
-        hist_img = hist_equalization(img)
-        show_img(hist_img, "HIST")
+    #     hist_img = hist_equalization(img)
+    #     show_img(hist_img, "HIST")
+    
     
     
     
