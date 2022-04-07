@@ -8,6 +8,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm, colors
 
 
+
+
 def display_color_hist(img):
     """Display color histogram
 
@@ -106,22 +108,52 @@ def hsv_3d_plot(hsv_img):
     plt.show()
     
 
+def mser():
+    img = cv.imread(str(Path("./data/images/road57.png")))
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+
+    mser = cv.MSER_create()
+    _regions, boxes = mser.detectRegions(gray)
+    for box in boxes:
+        x,y,w,h = box
+        cv.rectangle(img, (x,y), (x+w, y+h), (255,0,0), 2)
+    
+    cv.imshow("MSER", img)
+    cv.waitKey(0)
+    
+def flann_matcher(des1, des2, img1, img2, kp1, kp2):
+    matcher = cv.DescriptorMatcher_create(cv.DescriptorMatcher_FLANNBASED)
+    matches = matcher.knnMatch(des1, des2, k=2)
+    
+    ratio_thresh = 0.7
+    good_matches = []
+    # ratio test as per Lowe's paper
+    for m,n in matches:
+        if m.distance < ratio_thresh*n.distance:
+            good_matches.append(m)
+    
+    img_matches = np.empty((max(img1.shape[0], img2.shape[0]), img1.shape[1]+img2.shape[1], 3), dtype=np.uint8)
+    
+    cv.drawMatches(img1, kp1, img2, kp2, good_matches, img_matches, flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    plt.imshow(img_matches)
+    plt.axis('off')
+    plt.title("FLANN")
+    plt.show()
 
 if __name__ == '__main__':
-    CONTRAST_THRESH = 0.7
+    # CONTRAST_THRESH = 0.7
     
-    dataDir = Path("./data/images")
+    # dataDir = Path("./data/images")
 
-    img_path = str(dataDir / "road153.png")
-    img = cv.imread(img_path)
-    gray = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
+    # img_path = str(dataDir / "road153.png")
+    # img = cv.imread(img_path)
+    # gray = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
-    display_color_hist(img)
-    show_img(img, "original")
+    # display_color_hist(img)
+    # show_img(img, "original")
     
-    # hsv  = cv.cvtColor(img, cv.COLOR_BGR2HSV_FULL)
-    # hsv_3d_plot(hsv)
-    # # TODO: perguntar se podemos usar esta função
+    # # hsv  = cv.cvtColor(img, cv.COLOR_BGR2HSV_FULL)
+    # # hsv_3d_plot(hsv)
     # if (is_low_contrast(gray, CONTRAST_THRESH)):
     #     print("Low Constrast Image")
         
@@ -131,7 +163,4 @@ if __name__ == '__main__':
     #     hist_img = hist_equalization(img)
     #     show_img(hist_img, "HIST")
     
-    
-    
-    
-
+    mser()
