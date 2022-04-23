@@ -1,2 +1,4 @@
 data/annotations/
 data/images/
+
+__pycache__/
