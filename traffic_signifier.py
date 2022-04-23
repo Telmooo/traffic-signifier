@@ -138,7 +138,7 @@ def approximate_contours(contours):
     # TODO ver se shape é circulo, qaudrado ou retângulo se n for excluir
     approximations = []
     for contour in contours:
-        epsilon = 0.02 * cv.arcLength(contour, True)
+        epsilon = 0.01 * cv.arcLength(contour, True)
         a = cv.approxPolyDP(contour, epsilon, True)
         
         approximations.append(a)
@@ -162,6 +162,35 @@ def get_convex_hulls(contours):
     # approximate_contours(drawing, hu)
     return hulls
     
+
+def hue_to_rgb(hue):
+    s = 1
+    v = 1
+
+    c = v * s
+    x = c * (1 -  divmod(hue / 60, 2)[0])
+    m = v - c
+
+    if hue < 60:
+        (r, g, b) = (c, x, 0)
+    elif hue < 120:
+        (r, g, b) = (x, c, 0)
+    elif hue < 180:
+        (r, g, b) = (0, c, x)
+    elif hue < 240:
+        (r, g, b) = (0, x, c)
+    elif hue < 300:
+        (r, g, b) = (x, 0, c)
+    else:
+        (r, g, b) = (c, 0, x)
+
+    (r, g, b) = (
+        (r + m) * 255,
+        (g + m) * 255,
+        (b + m) * 255,
+    )
+
+    return (r, g, b)
     
  
 def find_contours(img):
@@ -181,8 +210,9 @@ def find_contours(img):
     
     contours, _hierarchy = cv.findContours(thresh_img, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
     
-    # approx_contours = approximate_contours(contours)
+    contours = approximate_contours(contours)
       
+    hulls = get_convex_hulls(contours)
     
     # boundingRect = []
     # final_approx = []
@@ -199,11 +229,13 @@ def find_contours(img):
     #     if (extent > 0.75): 
     #         boundingRect.append(b_rect)
     #         final_approx.append(approx_c)
-       
+    
     # draw contours + hull results 
     drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), dtype=np.uint8)
+    print(len(contours))
     for i in range(len(contours)):
-        cv.drawContours(drawing, contours, i, (0, 0, 255))
+        cv.drawContours(drawing, hulls, i, (255, 255, 255), 2)
+        cv.drawContours(drawing, contours, i, hue_to_rgb(360 / len(contours) * i), 2)
         # cv.rectangle(drawing, (int(boundingRect[i][0]), int(boundingRect[i][1])), \
             # (int(boundingRect[i][0]+boundingRect[i][2]), int(boundingRect[i][1]+boundingRect[i][3])), (0, 255, 0), 2)
         
@@ -248,7 +280,7 @@ if __name__ == '__main__':
     #     x, y, w, h = box
     #     region_img = img[y:y+h, x:x+w]
 
-    kernel = np.ones((5,5),np.uint8)
+    kernel = np.ones((3,3),np.uint8)
     morphed_img = cv.morphologyEx(segmented_img, cv.MORPH_CLOSE, kernel)
 
 
