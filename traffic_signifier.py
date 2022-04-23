@@ -9,7 +9,6 @@ from matplotlib import cm, colors
 
 
 
-
 def display_color_hist(img):
     """Display color histogram
 
@@ -108,18 +107,13 @@ def hsv_3d_plot(hsv_img):
     plt.show()
     
 
-def mser():
-    img = cv.imread(str(Path("./data/images/road57.png")))
+def mser(img):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
     mser = cv.MSER_create()
-    _regions, boxes = mser.detectRegions(gray)
-    for box in boxes:
-        x,y,w,h = box
-        cv.rectangle(img, (x,y), (x+w, y+h), (255,0,0), 2)
+    regions, boxes = mser.detectRegions(gray)
     
-    cv.imshow("MSER", img)
-    cv.waitKey(0)
+    return regions, boxes
     
 def flann_matcher(des1, des2, img1, img2, kp1, kp2):
     matcher = cv.DescriptorMatcher_create(cv.DescriptorMatcher_FLANNBASED)
@@ -139,14 +133,109 @@ def flann_matcher(des1, des2, img1, img2, kp1, kp2):
     plt.axis('off')
     plt.title("FLANN")
     plt.show()
+    
+def approximate_contours(contours):
+    # TODO ver se shape é circulo, qaudrado ou retângulo se n for excluir
+    approximations = []
+    for contour in contours:
+        epsilon = 0.02 * cv.arcLength(contour, True)
+        a = cv.approxPolyDP(contour, epsilon, True)
+        
+        approximations.append(a)
+    return approximations
+        
+    
+    
+def threshold_segmentation(gray, thresh):
+    _, thresh_img = cv.threshold(gray, 200, thresh, cv.THRESH_BINARY+cv.THRESH_OTSU)
+    show_img(thresh_img)
+    return thresh_img
+
+def get_convex_hulls(contours):
+    # find convex hull object for each contour
+    hulls = []
+    for contour in contours:
+        hull = cv.convexHull(contour)
+        hulls.append(hull)
+    
+    # TODO: may want to approximate
+    # approximate_contours(drawing, hu)
+    return hulls
+    
+    
+ 
+def find_contours(img):
+    ADAPT_THRESH = 51
+    # https://docs.opencv.org/3.4/d7/d1d/tutorial_hull.html
+    
+
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    
+    # ret, thresh = cv.threshold(gray, 127, 255, 0)
+    thresh = 255
+    # thresh_img = cv.adaptiveThreshold(gray, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, ADAPT_THRESH, 1)
+    
+    thresh_img = threshold_segmentation(gray, thresh)
+    
+    # canny_img = cv.Canny(gray, thresh, thresh*2)
+    
+    contours, _hierarchy = cv.findContours(thresh_img, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+    
+    # approx_contours = approximate_contours(contours)
+      
+    
+    boundingRect = []
+    final_approx = []
+    for approx_c in contours:
+        b_rect = cv.boundingRect(approx_c)
+        
+        b_area = abs(b_rect[0] - b_rect[2]) * abs(b_rect[1] - b_rect[3])
+        
+        if (b_area > 0):
+            extent = cv.contourArea(approx_c) / b_area
+        else:
+            continue
+        
+        if (extent > 0.75): 
+            boundingRect.append(b_rect)
+            final_approx.append(approx_c)
+       
+    # draw contours + hull results 
+    drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), dtype=np.uint8)
+    for i in range(len(final_approx)):
+        cv.drawContours(drawing, final_approx, i, (0, 0, 255))
+        cv.rectangle(drawing, (int(boundingRect[i][0]), int(boundingRect[i][1])), \
+        (int(boundingRect[i][0]+boundingRect[i][2]), int(boundingRect[i][1]+boundingRect[i][3])), (0, 255, 0), 2)
+        
+    
+    
+    cv.imshow("Countours", drawing)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+    
+
+def image_red_ratio(hsv):
+    mask = cv.inRange(hsv, np.array([0, 40, 25]), np.array([5, 255, 255]))
+    mask2 = cv.inRange(hsv, np.array([170, 40, 25]), np.array([179, 255, 255]))
+    
+    mask = cv.bitwise_or(mask, mask2)
+    ratio = cv.countNonZero(mask) / hsv.size/3
+    return ratio, mask
+
+def image_blue_ratio(hsv):
+    lower_blue = np.array([100, 105, 40])
+    upper_blue = np.array([120, 255, 255])
+    mask = cv.inRange(hsv, lower_blue, upper_blue)
+    ratio = cv.countNonZero(mask) / hsv.size/3
+    return ratio, mask
 
 if __name__ == '__main__':
     # CONTRAST_THRESH = 0.7
     
-    # dataDir = Path("./data/images")
+    dataDir = Path("./data/images")
 
-    # img_path = str(dataDir / "road153.png")
-    # img = cv.imread(img_path)
+    img_path = str(dataDir / "road825.png")
+    img = cv.imread(img_path)
     # gray = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
     # display_color_hist(img)
@@ -163,4 +252,23 @@ if __name__ == '__main__':
     #     hist_img = hist_equalization(img)
     #     show_img(hist_img, "HIST")
     
-    mser()
+    # mser()
+    
+    _regions, boxes = mser(img)
+    
+    # for box in boxes:
+    #     x, y, w, h = box
+    #     region_img = img[y:y+h, x:x+w]
+        
+    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+    red_ratio, red_mask = image_red_ratio(hsv)
+    blue_ratio, blue_mask = image_blue_ratio(hsv)
+    
+    mask = cv.bitwise_or(red_mask, blue_mask)
+    
+    print(red_mask.shape, blue_mask.shape, mask.shape)
+    img_ = cv.bitwise_and(img, img, mask = mask)
+    
+    show_img(img_)
+    
+    find_contours(img_)
