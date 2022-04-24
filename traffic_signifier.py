@@ -199,19 +199,36 @@ def hue_to_rgb(hue):
     
  
 def find_contours(img):
-    ADAPT_THRESH = 51
     # https://docs.opencv.org/3.4/d7/d1d/tutorial_hull.html
     
-
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     
+    
+    
+
+    
     # ret, thresh = cv.threshold(gray, 127, 255, 0)
-    # thresh_img = cv.adaptiveThreshold(gray, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, ADAPT_THRESH, 1)
+    # thresh_img = cv.adaptiveThreshold(gray, 126, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, ADAPT_THRESH, 2)
     
-    _, thresh_img = cv.threshold(gray, 200, 255, cv.THRESH_BINARY+cv.THRESH_OTSU)    
+    # _, thresh_img = cv.threshold(gray, 200, 255, cv.THRESH_BINARY+cv.THRESH_OTSU)   
+    
+    # """ KMEANS """
+    # Z = gray.reshape((-1,3))
+    # Z = np.float32(Z)
+
+    # # Define criteria, number of clusters(K) and apply kmeans
+    # criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+    # k = 4
+    # ret, label, center = cv.kmeans(Z, k, None, criteria, 10, cv.KMEANS_RANDOM_CENTERS)
+    
+    # center = np.uint8(center)
+    # result = center[label.flatten()]
+    # k_means_img = result.reshape((gray.shape))
     
     
-    contours, _hierarchy = cv.findContours(thresh_img, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE )
+    contours, _hierarchy = cv.findContours(gray, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+    
+    
     
     # contours = approximate_contours(contours)
     
@@ -244,7 +261,7 @@ def find_contours(img):
         
         
     # # draw contours + hull results 
-    drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), dtype=np.uint8)
+    drawing = np.zeros((gray.shape[0], gray.shape[1], 3), dtype=np.uint8)
     for i, c in enumerate(contours):
         b_rect = cv.boundingRect(c)
         
@@ -270,12 +287,17 @@ def find_contours(img):
             
             circ_area = math.pi * radius**2
             
-            if c_area >= 0.95:
+            print(circ_area, c_area, b_rect_area)
+            
+            c_area_ratio = c_area/circ_area
+            if c_area_ratio >= 0.95:
                 print("Circle")
                 cv.drawContours(drawing, [c], 0, (0,255,0))
-            elif c_area >= 0.75:
+            elif c_area_ratio >= 0.75:
                 print("Octagon")
                 cv.drawContours(drawing, [c], 0, (0,0,255))
+            else:
+                cv.drawContours(drawing, [c], 0, (255,255,255))
             
         elif ratio >= 0.35:
             print("Triangle")
@@ -288,8 +310,8 @@ def find_contours(img):
 
 
 def image_red_ratio(hsv):
-    mask = cv.inRange(hsv, np.array([0, 0, 25]), np.array([10, 255, 255]))
-    mask2 = cv.inRange(hsv, np.array([135, 0, 25]), np.array([179, 255, 255]))
+    mask = cv.inRange(hsv, np.array([0, 40, 25]), np.array([10, 255, 255]))
+    mask2 = cv.inRange(hsv, np.array([135, 40, 25]), np.array([179, 255, 255]))
     
     mask = cv.bitwise_or(mask, mask2)
     ratio = cv.countNonZero(mask) / hsv.size/3
@@ -306,23 +328,25 @@ if __name__ == '__main__':
     # CONTRAST_THRESH = 0.7
     
     # TODO morphology on blue square with crosswalks
+    # TODO improve edge detection
     
     dataDir = Path("./data/images")
     
     signDir = Path("./data/signs")
 
-    # img_path = str(dataDir / "road55.png")
-    img_path = str(dataDir / "road875.png")
+    # img_path = str(dataDir / "road55.png") # TODO cursed siamese
+    img_path = str(dataDir / "road873.png")
     # img_path = str(dataDir / "road369.png") # TODO: Hell on Earth
     # img_path = str(signDir / "warning/warning-crossroad-stop.png")
     img = cv.imread(img_path)
     
-    
-    if (is_low_contrast(img, 0.5)):
-        print("Low contrast: " + img_path)
-        img = clahe_equalization(img)
+    # if (is_low_contrast(img, 0.5)):
+    print("Low contrast: " + img_path)
+    img = clahe_equalization(img)
 
-    segmented_img = cv.pyrMeanShiftFiltering(img, 10, 15)
+
+    # segmented_img = cv.pyrMeanShiftFiltering(img, 10, 25, 100)
+    segmented_img = cv.pyrMeanShiftFiltering(img, 10, 15, 100)
     show_img(img, "Original")
     show_img(segmented_img, "Mean Shift")
 
@@ -334,8 +358,8 @@ if __name__ == '__main__':
 
     # kernel = np.ones((1,1),np.uint8)
     # morphed_img = cv.morphologyEx(segmented_img, cv.MORPH_CLOSE, kernel)
-
-
+    # (b, g, r) = img.split()
+    
 
     hsv = cv.cvtColor(segmented_img, cv.COLOR_BGR2HSV)
     red_ratio, red_mask = image_red_ratio(hsv)
