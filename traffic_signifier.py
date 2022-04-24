@@ -3,11 +3,17 @@ import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
 from skimage.exposure import is_low_contrast
+import math
 
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm, colors
 
-
+def handleMouseEvent(event, x, y, flags, param):
+        
+    if event == cv.EVENT_LBUTTONUP :
+        pixel = param[y, x]
+        mouse_pressed = True
+        print(f"({pixel[0]}, {pixel[1]}, {pixel[2]})")
 
 def display_color_hist(img):
     """Display color histogram
@@ -23,6 +29,8 @@ def display_color_hist(img):
     plt.show()
     
 def show_img(img, title="Image"):
+    cv.namedWindow(title)
+    cv.setMouseCallback(title, handleMouseEvent, img)
     cv.imshow(title, img)
     cv.waitKey(0)
     cv.destroyWindow(title)
@@ -146,10 +154,7 @@ def approximate_contours(contours):
         
     
     
-def threshold_segmentation(gray, thresh):
-    _, thresh_img = cv.threshold(gray, 200, thresh, cv.THRESH_BINARY+cv.THRESH_OTSU)
-    show_img(thresh_img)
-    return thresh_img
+
 
 def get_convex_hulls(contours):
     # find convex hull object for each contour
@@ -201,54 +206,90 @@ def find_contours(img):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     
     # ret, thresh = cv.threshold(gray, 127, 255, 0)
-    thresh = 255
     # thresh_img = cv.adaptiveThreshold(gray, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, ADAPT_THRESH, 1)
     
-    thresh_img = threshold_segmentation(gray, thresh)
+    _, thresh_img = cv.threshold(gray, 200, 255, cv.THRESH_BINARY+cv.THRESH_OTSU)    
     
-    # canny_img = cv.Canny(gray, thresh, thresh*2)
     
-    contours, _hierarchy = cv.findContours(thresh_img, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+    contours, _hierarchy = cv.findContours(thresh_img, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE )
     
-    contours = approximate_contours(contours)
-      
-    hulls = get_convex_hulls(contours)
+    # contours = approximate_contours(contours)
+    
+    # contours = sorted(contours, key=lambda x : -cv.contourArea(x))[:10]
+    
+   
+    
+    # drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), dtype=np.uint8)
+    # for c in contours:
+        
+    #     if len(c) == 3:
+    #         print("Triangle")
+    #         cv.drawContours(drawing, [c], 0, (0,255,255))
+    #     elif len(c) == 4:
+    #         print("Square")
+    #         cv.drawContours(drawing, [c], 0, (255, 0, 0), 1)
+    #     elif len(c) == 8:
+    #         print("Octagon")
+    #         cv.drawContours(drawing, [c], 0, (0,0,255))
+    #     else:
+    #         print("Other")
+    #         cv.drawContours(drawing, [c], 0, (0,255,0))
+            
+    # show_img(drawing)
+    # hulls = get_convex_hulls(contours)
     
     # boundingRect = []
-    # final_approx = []
     # for approx_c in contours:
-    #     b_rect = cv.boundingRect(approx_c)
+    #     boundingRect.append()
         
-    #     b_area = abs(b_rect[0] - b_rect[2]) * abs(b_rect[1] - b_rect[3])
         
-    #     if (b_area > 0):
-    #         extent = cv.contourArea(approx_c) / b_area
-    #     else:
-    #         continue
-        
-    #     if (extent > 0.75): 
-    #         boundingRect.append(b_rect)
-    #         final_approx.append(approx_c)
-    
-    # draw contours + hull results 
+    # # draw contours + hull results 
     drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), dtype=np.uint8)
-    print(len(contours))
-    for i in range(len(contours)):
-        cv.drawContours(drawing, hulls, i, (255, 255, 255), 2)
-        cv.drawContours(drawing, contours, i, hue_to_rgb(360 / len(contours) * i), 2)
-        # cv.rectangle(drawing, (int(boundingRect[i][0]), int(boundingRect[i][1])), \
-            # (int(boundingRect[i][0]+boundingRect[i][2]), int(boundingRect[i][1]+boundingRect[i][3])), (0, 255, 0), 2)
+    for i, c in enumerate(contours):
+        b_rect = cv.boundingRect(c)
         
-    
-    
-    cv.imshow("Countours", drawing)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+        b_rect_area = b_rect[3] * b_rect[2] # bounding rect (normal)
+        
+        # b_rect = cv.minAreaRect(c)
+        # b_rect_area = abs(b_rect[0][0]-b_rect[1][0]) * abs(b_rect[0][1]-b_rect[1][1])
+        
+        c_area = cv.contourArea(c)
+        ratio = c_area/b_rect_area
+        
+        cv.rectangle(drawing, (int(b_rect[0]), int(b_rect[1])), \
+            (int(b_rect[0]+b_rect[2]), int(b_rect[1]+b_rect[3])), (255, 255, 255), 2)
+        
+        if ratio >= 0.90:
+            print("Square")
+            cv.drawContours(drawing, [c], 0, (255, 0, 0))
+        elif ratio >= 0.70:
+            (x,y),radius = cv.minEnclosingCircle(c)
+            center = (int(x),int(y))
+            radius = int(radius)
+            cv.circle(img,center,radius,(0,255,0),2)
+            
+            circ_area = math.pi * radius**2
+            
+            if c_area >= 0.95:
+                print("Circle")
+                cv.drawContours(drawing, [c], 0, (0,255,0))
+            elif c_area >= 0.75:
+                print("Octagon")
+                cv.drawContours(drawing, [c], 0, (0,0,255))
+            
+        elif ratio >= 0.35:
+            print("Triangle")
+            cv.drawContours(drawing, [c], 0, (0,255,255))
+        else:
+            cv.drawContours(drawing, [c], 0, (255,255,255))
+            
+    show_img(drawing)   
+
 
 
 def image_red_ratio(hsv):
-    mask = cv.inRange(hsv, np.array([0, 40, 25]), np.array([5, 255, 255]))
-    mask2 = cv.inRange(hsv, np.array([170, 40, 25]), np.array([179, 255, 255]))
+    mask = cv.inRange(hsv, np.array([0, 0, 25]), np.array([10, 255, 255]))
+    mask2 = cv.inRange(hsv, np.array([135, 0, 25]), np.array([179, 255, 255]))
     
     mask = cv.bitwise_or(mask, mask2)
     ratio = cv.countNonZero(mask) / hsv.size/3
@@ -264,15 +305,26 @@ def image_blue_ratio(hsv):
 if __name__ == '__main__':
     # CONTRAST_THRESH = 0.7
     
+    # TODO morphology on blue square with crosswalks
+    
     dataDir = Path("./data/images")
+    
+    signDir = Path("./data/signs")
 
-    # img_path = str(dataDir / "road145.png")
-    # img_path = str(dataDir / "road121.png")
-    img_path = str(dataDir / "road825.png")
+    # img_path = str(dataDir / "road55.png")
+    img_path = str(dataDir / "road875.png")
+    # img_path = str(dataDir / "road369.png") # TODO: Hell on Earth
+    # img_path = str(signDir / "warning/warning-crossroad-stop.png")
     img = cv.imread(img_path)
+    
+    
+    if (is_low_contrast(img, 0.5)):
+        print("Low contrast: " + img_path)
+        img = clahe_equalization(img)
 
-    segmented_img = cv.pyrMeanShiftFiltering(img, 20, 40, 10)
-    show_img(segmented_img)
+    segmented_img = cv.pyrMeanShiftFiltering(img, 10, 15)
+    show_img(img, "Original")
+    show_img(segmented_img, "Mean Shift")
 
     # _regions, boxes = mser(img)
     
@@ -280,22 +332,24 @@ if __name__ == '__main__':
     #     x, y, w, h = box
     #     region_img = img[y:y+h, x:x+w]
 
-    kernel = np.ones((3,3),np.uint8)
-    morphed_img = cv.morphologyEx(segmented_img, cv.MORPH_CLOSE, kernel)
+    # kernel = np.ones((1,1),np.uint8)
+    # morphed_img = cv.morphologyEx(segmented_img, cv.MORPH_CLOSE, kernel)
 
 
 
-    hsv = cv.cvtColor(morphed_img, cv.COLOR_BGR2HSV)
+    hsv = cv.cvtColor(segmented_img, cv.COLOR_BGR2HSV)
     red_ratio, red_mask = image_red_ratio(hsv)
     blue_ratio, blue_mask = image_blue_ratio(hsv)
+        
+    reds = cv.bitwise_and(img, img, mask = red_mask)
+    blues = cv.bitwise_and(img, img, mask = blue_mask)
     
-    mask = cv.bitwise_or(red_mask, blue_mask)
+    show_img(reds)
+    show_img(blues)
     
-    img_ = cv.bitwise_and(img, img, mask = mask)
+    find_contours(reds)
     
-    show_img(img_)
-    
-    find_contours(img_)
+    find_contours(blues)
 
 
 
