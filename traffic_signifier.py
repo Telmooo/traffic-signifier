@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import cv2 as cv
 import numpy as np
 from pathlib import Path
@@ -28,7 +30,7 @@ def display_color_hist(img):
         plt.xlim([0,256])
     plt.show()
     
-def show_img(img, title="Image"):
+def show_img(img, title:str="Image"):
     cv.namedWindow(title)
     cv.setMouseCallback(title, handleMouseEvent, img)
     cv.imshow(title, img)
@@ -197,15 +199,22 @@ def hue_to_rgb(hue):
 
     return (r, g, b)
     
- 
-def find_contours(img):
+contour_colors = {
+    'square': (255, 0, 0),
+    'circle': (0, 255, 0),
+    'octagon': (0,0,255),
+    'triangle': (0,255,255)
+}
+def get_shape_color(shape: str):
+    if shape == None:
+        return (255, 255, 255)
+    else:
+        contour_colors.get(shape)
+
+def find_contours(img, ret=[]):
     # https://docs.opencv.org/3.4/d7/d1d/tutorial_hull.html
     
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    
-    
-    
-
     
     # ret, thresh = cv.threshold(gray, 127, 255, 0)
     # thresh_img = cv.adaptiveThreshold(gray, 126, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, ADAPT_THRESH, 2)
@@ -258,8 +267,7 @@ def find_contours(img):
     # boundingRect = []
     # for approx_c in contours:
     #     boundingRect.append()
-        
-        
+    
     # # draw contours + hull results 
     drawing = np.zeros((gray.shape[0], gray.shape[1], 3), dtype=np.uint8)
     for i, c in enumerate(contours):
@@ -273,41 +281,47 @@ def find_contours(img):
         c_area = cv.contourArea(c)
         ratio = c_area/b_rect_area
         
-        cv.rectangle(drawing, (int(b_rect[0]), int(b_rect[1])), \
-            (int(b_rect[0]+b_rect[2]), int(b_rect[1]+b_rect[3])), (255, 255, 255), 2)
-        
+        shape = None
         if ratio >= 0.90:
-            print("Square")
-            cv.drawContours(drawing, [c], 0, (255, 0, 0))
+            shape = "square"
         elif ratio >= 0.70:
             (x,y),radius = cv.minEnclosingCircle(c)
             center = (int(x),int(y))
             radius = int(radius)
-            cv.circle(img,center,radius,(0,255,0),2)
             
             circ_area = math.pi * radius**2
             
-            print(circ_area, c_area, b_rect_area)
+            # cv.circle(img,center,radius,(0,255,0),2)
+            # print(circ_area, c_area, b_rect_area)
             
             c_area_ratio = c_area/circ_area
             if c_area_ratio >= 0.95:
-                print("Circle")
-                cv.drawContours(drawing, [c], 0, (0,255,0))
+                shape = "circle"
             elif c_area_ratio >= 0.75:
-                print("Octagon")
-                cv.drawContours(drawing, [c], 0, (0,0,255))
-            else:
-                cv.drawContours(drawing, [c], 0, (255,255,255))
+                shape = "octagon"
             
         elif ratio >= 0.35:
-            print("Triangle")
-            cv.drawContours(drawing, [c], 0, (0,255,255))
-        else:
-            cv.drawContours(drawing, [c], 0, (255,255,255))
-            
-    show_img(drawing)   
+            shape = "triangle"
+        
+        ret.append({
+            'shape': shape,
+            'contour': c
+        })
 
+    return ret
 
+def draw_contours(img, contours, identified_only=False):
+    for cont in contours:
+        if (not identified_only) or cont['shape'] != None:
+            cv.drawContours(img, [cont['contour']], 0, get_shape_color(cont['shape']))
+
+def draw_contours_boxes(img, contours, identified_only=False):
+    for cont in contours:
+        if (not identified_only) or cont['shape'] != None:
+            b_rect = cv.boundingRect(cont['contour'])
+
+            cv.rectangle(img, (int(b_rect[0]), int(b_rect[1])), \
+                (int(b_rect[0]+b_rect[2]), int(b_rect[1]+b_rect[3])), (255, 255, 255), 2)
 
 def image_red_ratio(hsv):
     mask = cv.inRange(hsv, np.array([0, 40, 25]), np.array([10, 255, 255]))
@@ -371,11 +385,17 @@ if __name__ == '__main__':
     show_img(reds)
     show_img(blues)
     
-    find_contours(reds)
-    
-    find_contours(blues)
+    red_contours = find_contours(reds)
+    blue_contours = find_contours(blues)
 
+    # drawing = img.copy()
+    drawing = np.zeros_like(img)
 
+    draw_contours_boxes(drawing, red_contours)
+    draw_contours_boxes(drawing, blue_contours)
 
+    draw_contours(drawing, red_contours)
+    draw_contours(drawing, blue_contours)
 
+    show_img(drawing)
 
