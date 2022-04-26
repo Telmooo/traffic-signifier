@@ -353,49 +353,51 @@ if __name__ == '__main__':
     # img_path = str(dataDir / "road369.png") # TODO: Hell on Earth
     # img_path = str(signDir / "warning/warning-crossroad-stop.png")
     img = cv.imread(img_path)
-    
+
+    show_img(img)
+
     # if (is_low_contrast(img, 0.5)):
-    print("Low contrast: " + img_path)
-    img = clahe_equalization(img)
+    # print("Low contrast: " + img_path)
+    # img = clahe_equalization(img)
 
 
-    # segmented_img = cv.pyrMeanShiftFiltering(img, 10, 25, 100)
-    segmented_img = cv.pyrMeanShiftFiltering(img, 10, 15, 100)
-    show_img(img, "Original")
-    show_img(segmented_img, "Mean Shift")
+    # # segmented_img = cv.pyrMeanShiftFiltering(img, 10, 25, 100)
+    # segmented_img = cv.pyrMeanShiftFiltering(img, 10, 15, 100)
+    # show_img(img, "Original")
+    # show_img(segmented_img, "Mean Shift")
 
-    # _regions, boxes = mser(img)
+    # # _regions, boxes = mser(img)
     
-    # for box in boxes:
-    #     x, y, w, h = box
-    #     region_img = img[y:y+h, x:x+w]
+    # # for box in boxes:
+    # #     x, y, w, h = box
+    # #     region_img = img[y:y+h, x:x+w]
 
-    # kernel = np.ones((1,1),np.uint8)
-    # morphed_img = cv.morphologyEx(segmented_img, cv.MORPH_CLOSE, kernel)
-    # (b, g, r) = img.split()
+    # # kernel = np.ones((1,1),np.uint8)
+    # # morphed_img = cv.morphologyEx(segmented_img, cv.MORPH_CLOSE, kernel)
+    # # (b, g, r) = img.split()
     
 
-    hsv = cv.cvtColor(segmented_img, cv.COLOR_BGR2HSV)
-    red_ratio, red_mask = image_red_ratio(hsv)
-    blue_ratio, blue_mask = image_blue_ratio(hsv)
+    # hsv = cv.cvtColor(segmented_img, cv.COLOR_BGR2HSV)
+    # red_ratio, red_mask = image_red_ratio(hsv)
+    # blue_ratio, blue_mask = image_blue_ratio(hsv)
         
-    reds = cv.bitwise_and(img, img, mask = red_mask)
-    blues = cv.bitwise_and(img, img, mask = blue_mask)
+    # reds = cv.bitwise_and(img, img, mask = red_mask)
+    # blues = cv.bitwise_and(img, img, mask = blue_mask)
     
-    show_img(reds)
-    show_img(blues)
+    # show_img(reds)
+    # show_img(blues)
     
-    red_contours = find_contours(reds)
-    blue_contours = find_contours(blues)
+    # red_contours = find_contours(reds)
+    # blue_contours = find_contours(blues)
 
-    # drawing = img.copy()
-    drawing = np.zeros_like(img)
+    # # drawing = img.copy()
+    # drawing = np.zeros_like(img)
 
-    draw_contours_boxes(drawing, red_contours)
-    draw_contours_boxes(drawing, blue_contours)
+    # draw_contours_boxes(drawing, red_contours)
+    # draw_contours_boxes(drawing, blue_contours)
 
-    draw_contours(drawing, red_contours)
-    draw_contours(drawing, blue_contours)
+    # draw_contours(drawing, red_contours)
+    # draw_contours(drawing, blue_contours)
 
-    show_img(drawing)
+    # show_img(drawing)
 

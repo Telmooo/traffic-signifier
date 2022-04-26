@@ -1,4 +1,6 @@
 data/annotations/
 data/images/
 
+out/
+
 __pycache__/
