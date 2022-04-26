@@ -1,9 +1,23 @@
+from traffic_signifier import show_img
 import utils.image_processing as imp
 
 import os
 
 import cv2 as cv
 import numpy as np
+
+def handleMouseEvent(event, x, y, flags, param):
+        
+    if event == cv.EVENT_LBUTTONUP :
+        pixel = param[y, x]
+        mouse_pressed = True
+        print(f"({pixel[0]}, {pixel[1]}, {pixel[2]})")
+def show_img(img, title:str="Image"):
+    cv.namedWindow(title)
+    cv.setMouseCallback(title, handleMouseEvent, img)
+    cv.imshow(title, img)
+    cv.waitKey(0)
+    cv.destroyWindow(title)
 
 def preprocess_image(bgr_image):
     out_image = imp.hsv_clahe_equalization(
@@ -17,25 +31,174 @@ def preprocess_image(bgr_image):
         clip_hist_percent=0.1,
         use_scale_abs=True
     )
+
+    out_image = imp.meanShiftFiltering(out_image)
     
     return out_image
 
 def segment_reds(bgr_image):
-    out_image = imp.meanShiftFiltering(bgr_image)
-    hsv_image = cv.cvtColor(out_image, cv.COLOR_BGR2HSV)
+    hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)
     mask = imp.extract_red_hsv(hsv_image=hsv_image)
-    out_image = cv.bitwise_and(out_image, out_image, mask=mask)
+    out_image = cv.bitwise_and(bgr_image, bgr_image, mask=mask)
     out_image = imp.binarize(out_image, threshold_percent=0.75)
     out_image = imp.removeSmallComponents(out_image, size_threshold=200)
     return out_image
 
 def segment_blues(bgr_image):
-    out_image = imp.meanShiftFiltering(bgr_image)
-    hsv_image = cv.cvtColor(out_image, cv.COLOR_BGR2HSV)
+    hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)
     mask = imp.extract_blue_hsv(hsv_image=hsv_image)
-    out_image = cv.bitwise_and(out_image, out_image, mask=mask)
+    out_image = cv.bitwise_and(bgr_image, bgr_image, mask=mask)
     out_image = imp.binarize(out_image, threshold_percent=0.75)
     out_image = imp.removeSmallComponents(out_image, size_threshold=200)
+    return out_image
+
+def extract_ROI(original_image, segmented_image):
+
+    contours = imp.getContours(segmented_image)
+
+    out_image = imp.extractObjects(original_image, contours)
+
+    return out_image
+
+def segment_red_ROI(bgr_image):
+    hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)
+    red_mask = imp.extract_red_hsv(hsv_image=hsv_image)
+    white_mask = imp.extract_white_hsv(hsv_image=hsv_image)
+    mask = cv.bitwise_or(red_mask, white_mask)
+    out_image = cv.bitwise_and(bgr_image, bgr_image, mask=mask)
+    out_image = imp.binarize(out_image, threshold_percent=0.75)
+    out_image = imp.removeSmallComponents(out_image, size_threshold=200)
+    return out_image
+
+def segment_blue_ROI(bgr_image):
+    hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)
+    blue_mask = imp.extract_blue_hsv(hsv_image=hsv_image)
+    white_mask = imp.extract_white_hsv(hsv_image=hsv_image)
+    mask = cv.bitwise_or(blue_mask, white_mask)
+    out_image = cv.bitwise_and(bgr_image, bgr_image, mask=mask)
+    out_image = imp.binarize(out_image, threshold_percent=0.75)
+    out_image = imp.removeSmallComponents(out_image, size_threshold=200)
+    return out_image
+
+circularity_ratios = {
+    "circle": 1,
+    "quadrilateral": 0.70,
+    "octagon": 0.92,
+    "triangle": 0.41,
+    # "diamond": 0.64,
+}
+
+extent_ratios = {
+    "circle": 0.785,
+    "quadrilateral": 1,
+    "octagon": 0.829,
+    "triangle": 0.498,
+    # "diamond": 0.5,
+}
+
+minextent_ratios = {
+    "circle": 0.785,
+    "quadrilateral": 1,
+    "octagon": 0.829,
+    "triangle": 0.498,
+    # "diamond": 1
+}
+
+def get_shape(contour, return_probabilities = False):
+    (_brect_x, _brect_y, brect_w, brect_h) = cv.boundingRect(contour)
+    brect_area = brect_w * brect_h
+
+    (minrect_x0, minrect_y0), (minrect_x1, minrect_y1), _minrect_angle = cv.minAreaRect(contour)
+    minrect_area = abs(minrect_x0 - minrect_x1) * abs(minrect_y0 - minrect_y1)
+
+    (_circle_x, _circle_y), circle_radius = cv.minEnclosingCircle(contour)
+    circle_area = np.pi * circle_radius * circle_radius
+
+    # mintriangle_area, _triangle = cv.minEnclosingTriangle(contour)
+
+    contourArea = cv.contourArea(contour)
+    contourPerimeter = cv.arcLength(contour, True)
+    # Measures how compact the shape is
+    circularity = (4 * np.pi * contourArea) / (contourPerimeter * contourPerimeter)
+
+    extent = contourArea / brect_area
+    min_extent = contourArea / minrect_area
+    
+    circle_ratio = contourArea / circle_area
+    # triangle_ratio = contourArea / mintriangle_area
+
+    probability_table = {
+        "circle": 1,
+        "quadrilateral": 1,
+        "triangle": 1,
+        "octagon": 1,
+        "other": 1
+    }
+
+    # TODO: Probability is wrong :(
+    for ratio, ratio_table in zip([circularity, circle_ratio, extent, min_extent], [circularity_ratios, circularity_ratios, extent_ratios, minextent_ratios]):
+        diffs = {}
+        sum_diffs = 0
+        for shape, perfect_ratio in ratio_table.items():
+            diff = abs(ratio - perfect_ratio) / perfect_ratio
+            diffs[shape] = diff
+            sum_diffs += diff
+        
+        for shape, diff in diffs.items():
+            probability_positive = 1 - (diff / sum_diffs)
+            probability_table[shape] *= probability_positive
+    
+    probability_table["other"] = 1 - sum([probability_table[shape] for shape in probability_table.keys() if shape != "other"])
+
+    chosen_shape = max(probability_table, key=probability_table.get)
+
+    print(probability_table)
+
+    if return_probabilities:
+        return chosen_shape, probability_table
+
+    return chosen_shape
+
+def detect_red_signs(original_image, segmented_image):
+    kernel = np.ones(shape=(5, 5), dtype=np.uint8)
+    morph_image = cv.morphologyEx(segmented_image, cv.MORPH_CLOSE, kernel, iterations=1)
+
+    show_img(segmented_image)
+    show_img(morph_image)
+
+    edges_image = cv.Canny(morph_image, 100, 200)
+
+    contours = imp.getContours(edges_image)
+    hulls = imp.getConvexHulls(contours)
+
+    approx_contours = [cv.approxPolyDP(hull, 0.01 * cv.arcLength(hull, True), True) for hull in hulls]
+
+    out_image = original_image.copy()
+    for contour in approx_contours:
+        shape = get_shape(contour)
+        print(shape)
+        if shape == "circle":
+            (x,y),radius = cv.minEnclosingCircle(contour)
+            center = (int(x), int(y))
+            radius = int(radius)
+            cv.circle(out_image, center, radius, (0, 255, 0), 2)
+        elif shape == "quadrilateral":
+            # Doesn't exist, in theory
+            x,y,w,h = cv.boundingRect(contour)
+            cv.rectangle(out_image, (x,y), (x+w,y+h), (255, 0, 0),2)
+        elif shape == "triangle":
+            # Doesn't exist, in theory
+            x,y,w,h = cv.boundingRect(contour)
+            cv.rectangle(out_image, (x,y), (x+w,y+h), (0, 255, 255),2)
+        elif shape == "octagon":
+            # Doesn't exist, in theory
+            x,y,w,h = cv.boundingRect(contour)
+            cv.rectangle(out_image, (x,y), (x+w,y+h), (0, 0, 255),2)
+        elif shape == "other":
+            # Doesn't exist, in theory
+            x,y,w,h = cv.boundingRect(contour)
+            cv.rectangle(out_image, (x,y), (x+w,y+h), (255, 255, 255),2)
+
     return out_image
 
 def save_images(outDir, output_dict):
@@ -56,11 +219,24 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, save_all : b
     red_image = segment_reds(processed_image)
     blue_image = segment_blues(processed_image)
 
+    roi_red_image = extract_ROI(processed_image, red_image)
+    roi_blue_image = extract_ROI(processed_image, blue_image)
+
+    roi_red_segment = segment_red_ROI(roi_red_image)
+    roi_blue_segment = segment_blue_ROI(roi_blue_image)
+
+    out_image = detect_red_signs(image, roi_red_segment)
+    show_img(out_image)
+
     if save_all:
         output = {
             f"{name}_processed": ("processed", processed_image),
             f"{name}_red_segment": ("red_segmentation", cv.cvtColor(red_image, cv.COLOR_GRAY2BGR)),
             f"{name}_blue_segment": ("blue_segmentation", cv.cvtColor(blue_image, cv.COLOR_GRAY2BGR)),
+            f"{name}_red_roi": ("red_roi", roi_red_image),
+            f"{name}_blue_roi": ("blue_roi", roi_blue_image),
+            f"{name}_red_roi_segment": ("red_roi_segmentation", roi_red_segment),
+            f"{name}_blue_roi_segment": ("blue_roi_segmentation", roi_blue_segment),
         }
     else:
         output = {

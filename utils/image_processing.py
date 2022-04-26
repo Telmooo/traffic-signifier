@@ -106,7 +106,7 @@ def extract_red_hsv(hsv_image, return_split = False):
 
     # Second zone of reds
     lowerbound_2 = np.array([135, 40, 40])
-    upperbound_2 = np.array([179, 255, 255])
+    upperbound_2 = np.array([180, 255, 255])
 
     red_1 = cv.inRange(hsv_image, lowerbound_1, upperbound_1)
     red_2 = cv.inRange(hsv_image, lowerbound_2, upperbound_2)
@@ -124,25 +124,28 @@ def extract_blue_hsv(hsv_image):
 
 def extract_white_hsv(hsv_image):
     lowerbound = np.array([0, 0, 127])
-    upperbound = np.array([0, 40, 255])
+    upperbound = np.array([255, 80, 255])
 
     return cv.inRange(hsv_image, lowerbound, upperbound)
 
 """
 Shape detection
 """
-def getCountours(image, return_hierarchy=False):
+def getContours(image, return_hierarchy=False):
     contours, hierarchy = cv.findContours(image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
     
     if return_hierarchy:
         return contours, hierarchy
     return contours
 
+def getConvexHulls(contours):
+    return [cv.convexHull(contour) for contour in contours]
+
 def extractObjects(bgr_image, contours):
-    objects = []
+    out_image = np.zeros_like(bgr_image)
 
     for contour in contours:
         x, y, w, h = cv.boundingRect(contour)
-        objects.append(bgr_image[y:y+h, x:x+w])
+        out_image[y:y+h, x:x+w] = bgr_image[y:y+h, x:x+w]
     
-    return objects
+    return out_image
