@@ -87,6 +87,7 @@ circularity_ratios = {
     "triangle": 0.41,
     # "diamond": 0.64,
 }
+circularity_ratios["other"] = 0.5 # np.mean(list(circularity_ratios.values()))
 
 extent_ratios = {
     "circle": 0.785,
@@ -95,6 +96,7 @@ extent_ratios = {
     "triangle": 0.498,
     # "diamond": 0.5,
 }
+extent_ratios["other"] = 0.5 # np.mean(list(extent_ratios.values()))
 
 minextent_ratios = {
     "circle": 0.785,
@@ -103,6 +105,7 @@ minextent_ratios = {
     "triangle": 0.498,
     # "diamond": 1
 }
+minextent_ratios["other"] = 0.5 # np.mean(list(minextent_ratios.values()))
 
 def get_shape(contour, return_probabilities = False):
     (_brect_x, _brect_y, brect_w, brect_h) = cv.boundingRect(contour)
@@ -127,32 +130,40 @@ def get_shape(contour, return_probabilities = False):
     circle_ratio = contourArea / circle_area
     # triangle_ratio = contourArea / mintriangle_area
 
-    probability_table = {
-        "circle": 1,
-        "quadrilateral": 1,
-        "triangle": 1,
-        "octagon": 1,
-        "other": 1
-    }
+    metrics = ["circularity", "circle_ratio", "extent", "min_extent"]
+    ratios = [circularity, circle_ratio, extent, min_extent]
+    ratio_tables = [circularity_ratios, circularity_ratios, extent_ratios, minextent_ratios]
+    n_metrics = len(ratios)
 
-    # TODO: Probability is wrong :(
-    for ratio, ratio_table in zip([circularity, circle_ratio, extent, min_extent], [circularity_ratios, circularity_ratios, extent_ratios, minextent_ratios]):
-        diffs = {}
-        sum_diffs = 0
-        for shape, perfect_ratio in ratio_table.items():
-            diff = abs(ratio - perfect_ratio) / perfect_ratio
-            diffs[shape] = diff
-            sum_diffs += diff
+    classes = ["circle", "quadrilateral", "octagon", "triangle", "other"] # Add diamond
+    n_classes = len(classes)
+
+    probability_table = np.zeros(shape=(n_metrics + 1, n_classes + 1))
+    for i in range(n_metrics):
+        ratio = ratios[i]
+        table = ratio_tables[i]
+        for j in range(n_classes):
+            shape_class = classes[j]
+            class_ratio = table[shape_class]
+            probability_table[i, j] = abs(ratio - class_ratio) / class_ratio
         
-        for shape, diff in diffs.items():
-            probability_positive = 1 - (diff / sum_diffs)
-            probability_table[shape] *= probability_positive
-    
-    probability_table["other"] = 1 - sum([probability_table[shape] for shape in probability_table.keys() if shape != "other"])
+        probability_table[i, n_classes] = np.sum(probability_table[i, 0:n_classes])
+        probability_table[i, 0:n_classes] = (1 - (probability_table[i, 0:n_classes] / probability_table[i, n_classes])) / (n_classes - 1)
+        probability_table[i, n_classes] = np.sum(probability_table[i, 0:n_classes])
 
-    chosen_shape = max(probability_table, key=probability_table.get)
+    probability_table[n_metrics, :n_classes] = np.sum(probability_table[:-1, :-1], axis=0) / (n_classes - 1)
+    probability_table[-1, n_classes] = np.sum(probability_table[-1, 0:n_classes])
+
 
     print(probability_table)
+
+    chosen_shape = -1
+    max_probability = -1
+    for i, shape in enumerate(classes):
+        p = probability_table[-1, i] 
+        if p > max_probability:
+            chosen_shape = shape
+            max_probability = p
 
     if return_probabilities:
         return chosen_shape, probability_table
@@ -162,9 +173,6 @@ def get_shape(contour, return_probabilities = False):
 def detect_red_signs(original_image, segmented_image):
     kernel = np.ones(shape=(5, 5), dtype=np.uint8)
     morph_image = cv.morphologyEx(segmented_image, cv.MORPH_CLOSE, kernel, iterations=1)
-
-    show_img(segmented_image)
-    show_img(morph_image)
 
     edges_image = cv.Canny(morph_image, 100, 200)
 
