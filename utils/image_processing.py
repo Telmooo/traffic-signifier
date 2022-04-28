@@ -1,7 +1,6 @@
 import numpy as np
 
 import cv2 as cv
-
 """
 Preprocessing
 """
@@ -76,7 +75,7 @@ def LaplacianOfGaussian(bgr_image):
 Segmentation
 """
 def meanShiftFiltering(bgr_image):
-    return cv.pyrMeanShiftFiltering(bgr_image, 10, 15, 100)
+    return cv.pyrMeanShiftFiltering(bgr_image, 10, 25, 100)
 
 def binarize(bgr_image, threshold_percent = 0.75, return_thresh = False):
     gray_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2GRAY)
@@ -117,7 +116,7 @@ def extract_red_hsv(hsv_image, return_split = False):
     return cv.bitwise_or(red_1, red_2)
 
 def extract_blue_hsv(hsv_image):
-    lowerbound = np.array([100, 128, 40])
+    lowerbound = np.array([100, 100, 40])
     upperbound = np.array([120, 255, 255])
 
     return cv.inRange(hsv_image, lowerbound, upperbound)

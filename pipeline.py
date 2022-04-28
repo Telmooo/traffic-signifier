@@ -1,4 +1,3 @@
-from traffic_signifier import show_img
 import utils.image_processing as imp
 
 import os
@@ -25,15 +24,15 @@ def preprocess_image(bgr_image):
         clipLimit=2.0,
         tileGridSize=(8, 8)
     )
-
     out_image = imp.automatic_brightness_contrast(
         bgr_image=out_image,
-        clip_hist_percent=0.1,
+        clip_hist_percent=0.05,
         use_scale_abs=True
     )
 
     out_image = imp.meanShiftFiltering(out_image)
     
+
     return out_image
 
 def segment_reds(bgr_image):
@@ -55,6 +54,12 @@ def segment_blues(bgr_image):
 def extract_ROI(original_image, segmented_image):
 
     contours = imp.getContours(segmented_image)
+
+    test_image = np.zeros_like(segmented_image)
+    for i in range(len(contours)):
+        cv.drawContours(test_image, contours, i, (255))
+
+    show_img(test_image)
 
     out_image = imp.extractObjects(original_image, contours)
 
@@ -122,7 +127,7 @@ def get_shape(contour, return_probabilities = False):
     contourArea = cv.contourArea(contour)
     contourPerimeter = cv.arcLength(contour, True)
     # Measures how compact the shape is
-    circularity = (4 * np.pi * contourArea) / (contourPerimeter * contourPerimeter)
+    circularity = (4 * np.pi * contourArea) / (contourPerimeter * contourPerimeter + 1e-4)
 
     extent = contourArea / brect_area
     min_extent = contourArea / minrect_area
