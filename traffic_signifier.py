@@ -338,6 +338,19 @@ def image_blue_ratio(hsv):
     ratio = cv.countNonZero(mask) / hsv.size/3
     return ratio, mask
 
+def weighted_gray_conversion(img, weights=[1, 1, 1]):
+    (row, col) = img.shape[0:2]
+    print(row, col)
+    
+    gray = img.copy()
+    # gray = img[:,:,0]
+    print(gray)
+    for i in range(row):
+        for j in range(col):
+            gray[i, j] = int(gray[i,j][0]*weights[0]/3) + int(gray[i,j][1]*weights[1]/3) + int(gray[i,j][2]*weights[2]/3)
+            
+    return gray
+
 if __name__ == '__main__':
     # CONTRAST_THRESH = 0.7
     
