@@ -4,3 +4,5 @@ data/images/
 out/
 
 __pycache__/
+
+.idea/
