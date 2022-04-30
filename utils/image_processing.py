@@ -180,7 +180,7 @@ def getConvexHulls(contours):
 
 def edge_detection(gray_image):
     # Apply morphological operation to soften possible artefacts
-    kernel = np.ones(shape=(5, 5), dtype=np.uint8)
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, ksize=(3, 3))
     morph_image = cv.morphologyEx(gray_image, cv.MORPH_CLOSE, kernel, iterations=1)
 
     return cv.Canny(morph_image, threshold1=100, threshold2=200, apertureSize=3)
