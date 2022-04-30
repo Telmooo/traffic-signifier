@@ -165,6 +165,47 @@ def segment_blues(bgr_image):
 
     return gray_image
 
+def segment(bgr_image):
+    B, G, R = cv.split(bgr_image)
+    hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)    
+    _, S, _ = cv.split(hsv_image)
+
+    B, G, R = np.float64(B), np.float64(G), np.float64(R)
+    S = np.float64(S)
+
+    M, N, _ = bgr_image.shape
+    hd_blue = np.zeros(shape=(M, N), dtype=np.float64)
+    hd_red = np.zeros(shape=(M, N), dtype=np.float64)
+    sd = np.zeros(shape=(M, N), dtype=np.float64)
+    
+    RED_TH = 40
+    BLUE_TH = 40
+    for i in range(M):
+        for j in range(N):
+            b, g, r = B[i, j], G[i, j], R[i, j]
+            sat = S[i, j]
+            max_channel = np.argmax([b, g, r])
+            maxI = np.max([b, g, r])
+            minI = np.min([b, g, r])
+
+            if max_channel == 0: # B
+                hd_blue[i, j] = 1.0 - np.abs(r - g) / (maxI - minI) if (maxI - minI) > BLUE_TH else 0
+                hd_red[i, j] = 0
+            elif max_channel == 2: # R
+                hd_red[i, j] = 1.0 - np.abs(g - b) / (maxI - minI) if (maxI - minI) > RED_TH else 0
+                hd_blue[i, j] = 0
+            else:
+                hd_blue[i, j] = 0
+                hd_red[i, j] = 0
+            sd[i, j] = 1 - max_channel/255.0 if max_channel > 0 else 0
+
+    hs_red = np.uint8(hd_red * sd * 255)
+    hs_blue = np.uint8(hd_blue * sd * 255)
+
+    hs_red = binarize(gray_image=hs_red, threshold_percent=0.5)
+    hs_blue = binarize(gray_image=hs_blue, threshold_percent=0.5)
+    return hs_red, hs_blue
+
 """
 RoI Extraction
 """
