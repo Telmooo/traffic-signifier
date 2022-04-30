@@ -43,7 +43,7 @@ def automatic_brightness_contrast(bgr_image, clip_hist_percent = 0.01, use_scale
         maximum_gray -= 1
 
     # Calculate alpha and beta values for the scaling
-    alpha = 255 / (maximum_gray - minimum_gray)
+    alpha = 255 / (maximum_gray - minimum_gray + 1e-6)
     beta = - minimum_gray * alpha
 
     if use_scale_abs:
@@ -189,15 +189,15 @@ def segment(bgr_image):
             minI = np.min([b, g, r])
 
             if max_channel == 0: # B
-                hd_blue[i, j] = 1.0 - np.abs(r - g) / (maxI - minI) if (maxI - minI) > BLUE_TH else 0
+                hd_blue[i, j] = 1.0 - np.abs(r - g) / (maxI - minI + 1e-6) if (maxI - minI) > BLUE_TH else 0
                 hd_red[i, j] = 0
             elif max_channel == 2: # R
-                hd_red[i, j] = 1.0 - np.abs(g - b) / (maxI - minI) if (maxI - minI) > RED_TH else 0
+                hd_red[i, j] = 1.0 - np.abs(g - b) / (maxI - minI + 1e-6) if (maxI - minI) > RED_TH else 0
                 hd_blue[i, j] = 0
             else:
                 hd_blue[i, j] = 0
                 hd_red[i, j] = 0
-            sd[i, j] = 1 - max_channel/255.0 if max_channel > 0 else 0
+            sd[i, j] = sat/255.0
 
     hs_red = np.uint8(hd_red * sd * 255)
     hs_blue = np.uint8(hd_blue * sd * 255)
@@ -288,7 +288,7 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
 
         ASPECT_RATIO_MIN = 0.45
         ASPECT_RATIO_MAX = 1.55
-        aspect_ratio = float(w) / h
+        aspect_ratio = float(w) / (h + 1e-6)
         if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
             rois.pop(i)
             continue
@@ -303,9 +303,9 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
                     if blue_image[yi, xi] > 127:
                         blue_pixels += 1
 
-        blue_ratio = blue_pixels / roi_size
-        red_ratio = red_pixels / roi_size
-        red_blue_ratio = red_pixels / (blue_pixels + 1e-4)
+        blue_ratio = blue_pixels / (roi_size + 1e-6)
+        red_ratio = red_pixels / (roi_size + 1e-6)
+        red_blue_ratio = red_pixels / (blue_pixels + 1e-6)
 
         if roi_type == "red":
             if red_ratio < 0.10:

@@ -81,22 +81,22 @@ def detect_shape(roi, roi_type, return_probabilities = False):
     contourPerimeter = cv.arcLength(contour, True)
     # Bounding Rectangle Area - used to calculate extent of contour
     brect_area = brect_w * brect_h
-    extent = contourArea / brect_area
+    extent = contourArea / (brect_area + 1e-6)
 
     # Minimum Bounding Rectangle - takes into account orientation and fits the bounding rectangle thighly
     (min_brect_x0, min_brect_y0), (min_brect_x1, min_brect_y1), min_brect_angle = cv.minAreaRect(contour)
     min_brect_area = abs(min_brect_x0 - min_brect_x1) * abs(min_brect_y0 - min_brect_y1)
 
-    min_extent = contourArea / min_brect_area
+    min_extent = contourArea / (min_brect_area + 1e-6)
 
     # Circularity - measures how compact the contour is
-    circularity = (4 * np.pi * contourArea) / (contourPerimeter * contourPerimeter + 1e-4)
+    circularity = (4 * np.pi * contourArea) / (contourPerimeter * contourPerimeter + 1e-6)
 
     # Minimum Enclosing Circle - similar to circularity
     (min_circle_x, min_circle_y), circle_radius = cv.minEnclosingCircle(contour)
     min_circle_area = np.pi * circle_radius * circle_radius
 
-    circle_extent = contourArea / min_circle_area
+    circle_extent = contourArea / (min_circle_area + 1e-6)
 
     metrics = ["circularity", "circle_extent", "extent", "min_extent"]
     ratios = [circularity, circle_extent, extent, min_extent]
@@ -126,13 +126,13 @@ def detect_shape(roi, roi_type, return_probabilities = False):
             probability_table[i, j] = abs(ratio - class_ratio) ** 2 # / class_ratio
         
         probability_table[i, n_classes] = np.sum(probability_table[i, 0:n_classes])
-        probability_table[i, 0:n_classes] = (1 - (probability_table[i, 0:n_classes] / probability_table[i, n_classes])) / (n_classes - 1)
+        probability_table[i, 0:n_classes] = (1 - (probability_table[i, 0:n_classes] / (probability_table[i, n_classes] + 1e-6))) / (n_classes - 1)
         probability_table[i, n_classes] = np.sum(probability_table[i, 0:n_classes])
 
     # Add corners row
     probability_table[n_metrics - 1, :n_classes] = np.array([circle, sqp, circle, trg])
     probability_table[n_metrics - 1, n_classes] = np.sum(probability_table[n_metrics - 1, 0:n_classes])
-    probability_table[n_metrics - 1, :n_classes] /= probability_table[n_metrics - 1, n_classes]
+    probability_table[n_metrics - 1, :n_classes] /= (probability_table[n_metrics - 1, n_classes] + 1e-6)
 
     probability_table[-1, :n_classes] = np.mean(probability_table[:-1, :-1], axis=0)
     probability_table[-1, n_classes] = np.sum(probability_table[-1, 0:n_classes])
@@ -184,8 +184,10 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
     
     processed_image = preprocess_image(image)
 
-    red_image = imp.segment_reds(processed_image)
-    blue_image = imp.segment_blues(processed_image)
+    # Old Segmentation - prone to intense blues on the sky
+    # red_image = imp.segment_reds(processed_image)
+    # blue_image = imp.segment_blues(processed_image)
+    red_image, blue_image = imp.segment(processed_image)
 
     red_edges = imp.edge_detection(red_image)
     blue_edges = imp.edge_detection(blue_image)
@@ -310,13 +312,13 @@ if __name__ == '__main__':
             annot_dict = xp.from_dir(annotationsPath)
         
         dir_files = os.listdir(path)
-        for f in tqdm(os.listdir(path)):
-            if f.endswith('.png') or f.endswith('.jpg'):
-                filename, _extension = os.path.splitext(os.path.basename(f))
+        for file in tqdm(os.listdir(path)):
+            if file.endswith('.png') or file.endswith('.jpg'):
+                filename, _extension = os.path.splitext(os.path.basename(file))
                 
                 detect_traffic_signs(
                     name=filename,
-                    image_path=path + f, 
+                    image_path=os.path.join(path, file),
                     outDir=outPath, 
                     save_all=verbose,
                     annot_dict=annot_dict
