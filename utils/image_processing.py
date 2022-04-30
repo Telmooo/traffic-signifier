@@ -264,14 +264,13 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
     contours = getContours(morph_image)
 
     # Apply convex hulls to close off shapes
-    contours = getConvexHulls(contours)
+    # contours = getConvexHulls(contours)
 
     # Approximate contour
-    contours = [cv.approxPolyDP(contour, 0.01 * cv.arcLength(contour, True), True) for contour in contours]
+    contours = [cv.approxPolyDP(contour, 0.004 * cv.arcLength(contour, True), True) for contour in contours]
 
     rois = [(cv.boundingRect(contour), contour) for contour in contours]
 
-    rois = mergeROI(rois)
 
     i = 0
     while True:
@@ -286,12 +285,19 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
             rois.pop(i)
             continue
 
-        ASPECT_RATIO_MIN = 0.45
-        ASPECT_RATIO_MAX = 1.55
         aspect_ratio = float(w) / (h + 1e-6)
-        if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
-            rois.pop(i)
-            continue
+        if roi_type == "red":
+            ASPECT_RATIO_MIN = 0.45
+            ASPECT_RATIO_MAX = 1.55
+            if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
+                rois.pop(i)
+                continue
+        elif roi_type == "blue":
+            ASPECT_RATIO_MIN = 0.45
+            ASPECT_RATIO_MAX = 2.0
+            if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
+                rois.pop(i)
+                continue
 
         blue_pixels = 0
         red_pixels = 0
@@ -319,6 +325,8 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
         rois[i] = ((x, y, w, h), contours, red_ratio, blue_ratio, red_blue_ratio)
 
         i += 1
+        
+    rois = mergeROI(rois)
     return rois
 
 """
