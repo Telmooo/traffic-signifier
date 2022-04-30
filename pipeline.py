@@ -1,4 +1,5 @@
 import utils.image_processing as imp
+import utils.xml_parser as xp
 
 import os
 
@@ -224,7 +225,7 @@ def save_images(outDir, output_dict):
         path = f"{directory}/{name}.png"
         cv.imwrite(path, image)
 
-def detect_traffic_signs(name: str, image_path : str, outDir : str, save_all : bool):
+def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict : dict, save_all : bool):
     image = cv.imread(image_path)
     
     processed_image = preprocess_image(image)
@@ -312,7 +313,7 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        "--annotations", help="Path to annotations for scoring accuracy of detection."
+        "--annotations", "-a", help="Path to annotations directory for scoring accuracy of detection."
     )
 
     parser.add_argument(
@@ -329,17 +330,41 @@ if __name__ == '__main__':
     verbose = args.verbose
     isFile = os.path.isfile(path)
     isDir = os.path.isdir(path)
-
+    
+    annot_dict = {}
     if isFile:
         filename, _extension = os.path.splitext(os.path.basename(path))
-
+        
+        if annotationsPath:
+            annot_dict = xp.parse(f'{annotationsPath}{filename}.xml')
+            
+        print(annot_dict)
+            
         detect_traffic_signs(
             name=filename,
             image_path=path,
             outDir=outPath,
-            save_all=verbose
+            save_all=verbose,
+            annot_dict=annot_dict
         )
     elif isDir:
+        
+        if annotationsPath:
+            annot_dict = xp.from_dir(annotationsPath)
+        print(annot_dict)
+        
+        dir_files = os.listdir(path)
+        for f in os.listdir(path):
+            if f.endswith('.png') or f.endswith('.jpg'):
+                filename, _extension = os.path.splitext(os.path.basename(f))
+                
+                detect_traffic_signs(
+                    name=filename,
+                    image_path=path + f, 
+                    outDir=outPath, 
+                    save_all=verbose,
+                    annot_dict=annot_dict
+                )
         pass
     else:
         print(f"Path {path} is unrecognized. Please verify if path corresponds to valid file or directory.", file=sys.stderr)
