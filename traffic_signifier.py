@@ -4,6 +4,8 @@ import utils.xml_parser as xp
 import os
 from collections import defaultdict
 
+from tqdm import tqdm
+
 import numpy as np
 import cv2 as cv
 import pandas as pd
@@ -295,8 +297,6 @@ if __name__ == '__main__':
         if annotationsPath:
             annot_dict = xp.parse(f'{annotationsPath}{filename}.xml')
             
-        print(annot_dict)
-            
         detect_traffic_signs(
             name=filename,
             image_path=path,
@@ -308,10 +308,9 @@ if __name__ == '__main__':
         
         if annotationsPath:
             annot_dict = xp.from_dir(annotationsPath)
-        print(annot_dict)
         
         dir_files = os.listdir(path)
-        for f in os.listdir(path):
+        for f in tqdm(os.listdir(path)):
             if f.endswith('.png') or f.endswith('.jpg'):
                 filename, _extension = os.path.splitext(os.path.basename(f))
                 
