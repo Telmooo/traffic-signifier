@@ -236,6 +236,10 @@ def segment(bgr_image):
 
     hs_red = binarize(gray_image=hs_red, threshold_percent=0.5)
     hs_blue = binarize(gray_image=hs_blue, threshold_percent=0.5)
+
+    kernel = cv.getStructuringElement(shape=cv.MORPH_ELLIPSE, ksize=(3, 3))
+    hs_red = cv.morphologyEx(hs_red, cv.MORPH_ERODE, kernel=kernel)
+
     return hs_red, hs_blue
 
 """
@@ -296,7 +300,7 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
     contours = getContours(morph_image)
 
     # Apply convex hulls to close off shapes
-    # contours = getConvexHulls(contours)
+    contours = getConvexHulls(contours)
 
     # Approximate contour
     contours = [cv.approxPolyDP(contour, 0.004 * cv.arcLength(contour, True), True) for contour in contours]
@@ -317,22 +321,38 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
             rois.pop(i)
             continue
 
+        BIG_SIGN = 50 * 50
         aspect_ratio = float(w) / (h + 1e-6)
         if roi_type == "red":
-            ASPECT_RATIO_MIN = 0.45
-            ASPECT_RATIO_MAX = 1.55
-            if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
-                rois.pop(i)
-                continue
+            if roi_size < BIG_SIGN:
+                ASPECT_RATIO_MIN = 0.7
+                ASPECT_RATIO_MAX = 1.3
+                if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
+                    rois.pop(i)
+                    continue
+            else:
+                ASPECT_RATIO_MIN = 0.45
+                ASPECT_RATIO_MAX = 1.55
+                if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
+                    rois.pop(i)
+                    continue
         elif roi_type == "blue":
-            ASPECT_RATIO_MIN = 0.45
-            ASPECT_RATIO_MAX = 2.0
-            if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
-                rois.pop(i)
-                continue
+            if roi_size < BIG_SIGN:
+                ASPECT_RATIO_MIN = 0.7
+                ASPECT_RATIO_MAX = 1.5
+                if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
+                    rois.pop(i)
+                    continue
+            else:
+                ASPECT_RATIO_MIN = 0.45
+                ASPECT_RATIO_MAX = 2.0
+                if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
+                    rois.pop(i)
+                    continue
 
         blue_pixels = 0
         red_pixels = 0
+        contourArea = 0
         for xi in range(x, x+w):
             for yi in range(y, y+h):
                 if cv.pointPolygonTest(contours, (xi, yi), measureDist=False) >= 0:
@@ -340,6 +360,7 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
                         red_pixels += 1
                     if blue_image[yi, xi] > 127:
                         blue_pixels += 1
+                    contourArea += 1
 
         blue_ratio = blue_pixels / (roi_size + 1e-6)
         red_ratio = red_pixels / (roi_size + 1e-6)
@@ -350,11 +371,11 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
                 rois.pop(i)
                 continue
         elif roi_type == "blue":
-            if blue_ratio < 0.40:
+            if blue_ratio < 0.4:
                 rois.pop(i)
                 continue
-        
-        rois[i] = ((x, y, w, h), contours, red_ratio, blue_ratio, red_blue_ratio)
+            pass
+        rois[i] = ((x, y, w, h), contours, red_ratio, blue_ratio, red_blue_ratio, contourArea)
 
         i += 1
         
@@ -364,8 +385,8 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
 """
 Shape detection
 """
-def corner_detection(roi, gray_image):
-    (x, y, w, h), contours, _, _, _ = roi
+def corner_detection(roi):
+    (x, y, w, h), contours, _, _, _, _ = roi
     region = np.zeros(shape=(h, w), dtype=np.uint8)
     cv.drawContours(region, [contours], 0, color=(255), offset=(-x, -y))
     region_32f = np.float32(region)
@@ -379,20 +400,20 @@ def corner_detection(roi, gray_image):
 
     CORNER_THRESHOLD = 60
 
-    ND = 7
+    ND = 5
     P = 1.0 / ND
     dw, dh = int(P * w), int(P * h)
 
-    tl = 0.25 * (norm_corners[0:, 0:dw].max() > CORNER_THRESHOLD)
+    tl = 0.25 * (norm_corners[0:dh, 0:dw].max() > CORNER_THRESHOLD)
     tc = 0.25 * (norm_corners[0:dh, (ND // 2)*dw:(ND // 2 + 1)*dw].max() > CORNER_THRESHOLD)
-    tr = 0.25 * (norm_corners[0:dh, (ND - 1)*dw:ND*dw].max() > CORNER_THRESHOLD)
+    tr = 0.25 * (norm_corners[0:dh, (ND - 1)*dw:].max() > CORNER_THRESHOLD)
 
     ml = 0.25 * (norm_corners[(ND // 2)*dh:(ND // 2 + 1)*dh, 0:dw].max() > CORNER_THRESHOLD)
-    mr = 0.25 * (norm_corners[(ND // 2)*dh:(ND // 2 + 1)*dh, (ND-1)*dw:ND*dw].max() > CORNER_THRESHOLD)
+    mr = 0.25 * (norm_corners[(ND // 2)*dh:(ND // 2 + 1)*dh, (ND-1)*dw:].max() > CORNER_THRESHOLD)
 
-    bl = 0.25 * (norm_corners[(ND-1)*dh:ND*dh, 0:dw].max() > CORNER_THRESHOLD)
-    bc = 0.25 * (norm_corners[(ND-1)*dh:ND*dh, (ND // 2)*dw:(ND // 2 + 1)*dw].max() > CORNER_THRESHOLD)
-    br = 0.25 * (norm_corners[(ND-1)*dh:ND*dh, (ND-1)*dw:ND*dw].max() > CORNER_THRESHOLD)
+    bl = 0.25 * (norm_corners[(ND-1)*dh:, 0:dw].max() > CORNER_THRESHOLD)
+    bc = 0.25 * (norm_corners[(ND-1)*dh:, (ND // 2)*dw:(ND // 2 + 1)*dw].max() > CORNER_THRESHOLD)
+    br = 0.25 * (norm_corners[(ND-1)*dh:, (ND-1)*dw:].max() > CORNER_THRESHOLD)
 
     sqp = max([
         clamp(tl + tr + br + bl - 0.5 * (ml + mr + tc + bc), 0.0, 1.0),
