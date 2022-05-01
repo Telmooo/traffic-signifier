@@ -179,7 +179,32 @@ def save_images(outDir, output_dict):
         path = f"{directory}/{name}.png"
         cv.imwrite(path, image)
 
-def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict : dict, save_all : bool):
+def cvt_annot_sign_type(type: str) -> str:
+    return {
+        'stop': 'stop',
+        'speedlimit': 'prohibitory',
+        'crosswalk': 'information',
+        'trafficlight': '',
+    }[type]
+
+
+def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict : dict, save_all : bool) -> list:
+    signs_identified = []
+    if (annot_dict):
+        signs_identified = [
+            {
+                'image': name,
+                'index': i,
+                'class': cvt_annot_sign_type(a['name']),
+                'identified': False,
+                'xmin': a['xmin'],
+                'ymin': a['ymin'],
+                'w': a['xmax'] - a['xmin'],
+                'h': a['ymax'] - a['ymin'],
+            } for (i, a) in enumerate(annot_dict[name]) if a['name'] != 'trafficlight']
+        if (len(signs_identified) == 0):
+            return []
+
     image = cv.imread(image_path)
     
     processed_image = preprocess_image(image)
@@ -222,6 +247,18 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
 
     output_image = image.copy()
 
+    def check_result(signs: list[dict], o_class: str, x: int, y: int, w: int, h: int):
+        ROI_MARGIN = 20
+        for s in signs:
+            if s['class'] == o_class and (
+                    s['xmin'] - ROI_MARGIN < x and
+                    s['ymin'] - ROI_MARGIN < y and
+                    s['w'] + 2 * ROI_MARGIN > w and
+                    s['h'] + 2 * ROI_MARGIN > h
+                ):
+                s['identified'] = True
+                return
+
     for roi in red_roi:
         shape = detect_shape(roi, "red", return_probabilities=False)
         (x, y, w, h), contours, red_ratio, blue_ratio, red_blue_ratio, sqp, trg, circle = roi
@@ -230,6 +267,7 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
             cv.drawContours(output_image, [contours], 0, color=(25, 255, 40), thickness=2)
             output_class = output_classes[(shape, "red")]
             cv.putText(output_image, output_class, (x, y - 5), cv.FONT_HERSHEY_SIMPLEX, 0.6, (25, 255, 40), 2, cv.LINE_AA)
+            check_result(signs_identified, output_class, x, y, w, h)
 
     for roi in blue_roi:
         shape = detect_shape(roi, "blue", return_probabilities=False)
@@ -238,6 +276,7 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
             cv.drawContours(output_image, [contours], 0, color=(25, 255, 40), thickness=2)
             output_class = output_classes[(shape, "blue")]
             cv.putText(output_image, output_class, (x, y - 5), cv.FONT_HERSHEY_SIMPLEX, 0.6, (25, 255, 40), 2, cv.LINE_AA)
+            check_result(signs_identified, output_class, x, y, w, h)
 
     if save_all:
         output = {
@@ -255,6 +294,8 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
 
     save_images(outDir, output)
 
+    return signs_identified
+
 if __name__ == '__main__':
     import argparse
     import sys
@@ -270,7 +311,7 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        "--out", help="Path of output directory. Defaults to `out`", default="./out"
+        "--out", "-o", help="Path of output directory. Defaults to `out`", default="./out"
     )
 
     parser.add_argument(
@@ -287,6 +328,8 @@ if __name__ == '__main__':
     path = args.path
     outPath = args.out
     annotationsPath = args.annotations
+    if (annotationsPath[-1] != os.path.sep):
+        annotationsPath += os.path.sep
     
     verbose = args.verbose
     isFile = os.path.isfile(path)
@@ -299,30 +342,35 @@ if __name__ == '__main__':
         if annotationsPath:
             annot_dict = xp.parse(f'{annotationsPath}{filename}.xml')
             
-        detect_traffic_signs(
+        results = detect_traffic_signs(
             name=filename,
             image_path=path,
             outDir=outPath,
             save_all=verbose,
             annot_dict=annot_dict
         )
+        os.makedirs(os.path.join(outPath, 'results'), exist_ok=True)
+        pd.DataFrame([results]).set_index(['image', 'index']).to_csv(os.path.join(outPath, 'results', f'{filename}.csv'))
+
     elif isDir:
         
         if annotationsPath:
             annot_dict = xp.from_dir(annotationsPath)
         
         dir_files = os.listdir(path)
+        results = []
         for file in tqdm(os.listdir(path)):
             if file.endswith('.png') or file.endswith('.jpg'):
                 filename, _extension = os.path.splitext(os.path.basename(file))
                 
-                detect_traffic_signs(
+                results += detect_traffic_signs(
                     name=filename,
                     image_path=os.path.join(path, file),
                     outDir=outPath, 
                     save_all=verbose,
                     annot_dict=annot_dict
                 )
-        pass
+        
+        pd.DataFrame(results).set_index(['image', 'index']).to_csv(os.path.join(outPath, 'results.csv'))
     else:
         print(f"Path {path} is unrecognized. Please verify if path corresponds to valid file or directory.", file=sys.stderr)
