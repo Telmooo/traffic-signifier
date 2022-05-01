@@ -15,6 +15,37 @@ def weighted_gray_transform(bgr_image, weights=[0.114, 0.587, 0.299]):
 """
 Preprocessing
 """
+def segment_sky(bgr_image):
+    hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)
+
+    # Light blue sky zone
+    lowerbound = np.array([85, 40, 150])
+    upperbound = np.array([108, 255, 255])
+
+    mask = cv.inRange(hsv_image, lowerbound, upperbound)
+    
+    segmented_image = cv.bitwise_and(bgr_image, bgr_image, mask=mask)
+    BIN_THRESHOLD = 0.5
+
+    gray_image = cv.cvtColor(segmented_image, cv.COLOR_BGR2GRAY)
+
+    threshold = int(255 * BIN_THRESHOLD)
+    ret_thresh, gray_image = cv.threshold(gray_image, threshold, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+
+    return gray_image
+
+def attenuate_sky_light(bgr_image, sky_threshold = 0.3):
+    sky_image = segment_sky(bgr_image)
+    sky_pixels = sky_image[sky_image > 127].size
+    total_pixels = sky_image.size
+    sky_ratio = float(sky_pixels) / total_pixels
+
+    if sky_ratio > sky_threshold:
+        B, G, R = cv.split(bgr_image)
+        return cv.merge([cv.equalizeHist(B), cv.equalizeHist(G), cv.equalizeHist(R)])
+    else:
+        return bgr_image
+
 def automatic_brightness_contrast(bgr_image, clip_hist_percent = 0.01, use_scale_abs = True, return_verbose = False):
     gray_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2GRAY)
 
@@ -166,14 +197,15 @@ def segment_blues(bgr_image):
     return gray_image
 
 def segment(bgr_image):
-    B, G, R = cv.split(bgr_image)
-    hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)    
+    smooth_image = cv.edgePreservingFilter(bgr_image, flags=cv.NORMCONV_FILTER, sigma_s=50, sigma_r=0.5)
+    B, G, R = cv.split(smooth_image)
+    hsv_image = cv.cvtColor(smooth_image, cv.COLOR_BGR2HSV)    
     _, S, _ = cv.split(hsv_image)
 
     B, G, R = np.float64(B), np.float64(G), np.float64(R)
     S = np.float64(S)
 
-    M, N, _ = bgr_image.shape
+    M, N, _ = smooth_image.shape
     hd_blue = np.zeros(shape=(M, N), dtype=np.float64)
     hd_red = np.zeros(shape=(M, N), dtype=np.float64)
     sd = np.zeros(shape=(M, N), dtype=np.float64)
@@ -197,7 +229,7 @@ def segment(bgr_image):
             else:
                 hd_blue[i, j] = 0
                 hd_red[i, j] = 0
-            sd[i, j] = sat/255.0
+            sd[i, j] = sat / 255.0
 
     hs_red = np.uint8(hd_red * sd * 255)
     hs_blue = np.uint8(hd_blue * sd * 255)
@@ -224,7 +256,7 @@ def edge_detection(gray_image):
     kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, ksize=(3, 3))
     morph_image = cv.morphologyEx(gray_image, cv.MORPH_CLOSE, kernel, iterations=1)
 
-    return cv.Canny(morph_image, threshold1=100, threshold2=200, apertureSize=3)
+    return cv.Canny(morph_image, threshold1=100, threshold2=200, apertureSize=5)
 
 def mergeROI(rois):
     # Sort RoI by X-coordinate and width to merge RoI
@@ -347,22 +379,31 @@ def corner_detection(roi, gray_image):
 
     CORNER_THRESHOLD = 60
 
-    w_20, h_20 = int(0.20 * w), int(0.20 * h)
-    tl = 0.25 * (norm_corners[0:h_20, 0:w_20].max() > CORNER_THRESHOLD)
-    tc = 0.25 * (norm_corners[0:h_20, 2*w_20:3*w_20].max() > CORNER_THRESHOLD)
-    tr = 0.25 * (norm_corners[0:h_20, 4*w_20:5*w_20].max() > CORNER_THRESHOLD)
+    ND = 7
+    P = 1.0 / ND
+    dw, dh = int(P * w), int(P * h)
 
-    ml = 0.25 * (norm_corners[2*h_20:3*h_20, 0:w_20].max() > CORNER_THRESHOLD)
-    mr = 0.25 * (norm_corners[2*h_20:3*h_20, 4*w_20:5*w_20].max() > CORNER_THRESHOLD)
+    tl = 0.25 * (norm_corners[0:, 0:dw].max() > CORNER_THRESHOLD)
+    tc = 0.25 * (norm_corners[0:dh, (ND // 2)*dw:(ND // 2 + 1)*dw].max() > CORNER_THRESHOLD)
+    tr = 0.25 * (norm_corners[0:dh, (ND - 1)*dw:ND*dw].max() > CORNER_THRESHOLD)
 
-    bl = 0.25 * (norm_corners[4*h_20:5*h_20, 0:w_20].max() > CORNER_THRESHOLD)
-    bc = 0.25 * (norm_corners[4*h_20:5*h_20, 2*w_20:3*w_20].max() > CORNER_THRESHOLD)
-    br = 0.25 * (norm_corners[4*h_20:5*h_20, 4*w_20:5*w_20].max() > CORNER_THRESHOLD)
+    ml = 0.25 * (norm_corners[(ND // 2)*dh:(ND // 2 + 1)*dh, 0:dw].max() > CORNER_THRESHOLD)
+    mr = 0.25 * (norm_corners[(ND // 2)*dh:(ND // 2 + 1)*dh, (ND-1)*dw:ND*dw].max() > CORNER_THRESHOLD)
 
-    sqp = clamp(tl + tr + br + bl - ml - mr - tc - bc, 0.0, 1.0)
-    tup = clamp(1/0.75 * (bl + br + tc) - 1.1 * (tl + tr) - 0.9 * (ml + mr), 0.0, 1.0)
-    tdp = clamp(1/0.75 * (tl + tr + bc) - 1.1 * (bl + br) - 0.9 * (ml + mr), 0.0, 1.0)
-    circle = clamp((2 * (tc + bc + ml + mr) + 0.5 * (tl + tr + bl + br)) / 2.5, 0.0, 1.0)
+    bl = 0.25 * (norm_corners[(ND-1)*dh:ND*dh, 0:dw].max() > CORNER_THRESHOLD)
+    bc = 0.25 * (norm_corners[(ND-1)*dh:ND*dh, (ND // 2)*dw:(ND // 2 + 1)*dw].max() > CORNER_THRESHOLD)
+    br = 0.25 * (norm_corners[(ND-1)*dh:ND*dh, (ND-1)*dw:ND*dw].max() > CORNER_THRESHOLD)
+
+    sqp = max([
+        clamp(tl + tr + br + bl - 0.5 * (ml + mr + tc + bc), 0.0, 1.0),
+        clamp(0.65 * (bl + br + tr + tc) - tl - 0.5 * ml - 0.8 * (bc + mr), 0.0, 1.0), # oriented rightwards up
+        clamp(0.65 * (bl + br + tl + tc) - tr - 0.5 * mr - 0.8 * (bc + ml), 0.0, 1.0), # oriented leftwards up
+        clamp(0.65 * (tl + tr + bl + bc) - br - 0.5 * mr - 0.8 * (tc + ml), 0.0, 1.0), # oriented rightwards down
+        clamp(0.65 * (tl + tr + br + bc) - bl - 0.5 * ml - 0.8 * (tc + mr), 0.0, 1.0), # oriented leftwards down
+    ])
+    tup = clamp(1/0.75 * (bl + br + tc) - 2.0 * (tl + tr) - 0.9 * (ml + mr), 0.0, 1.0)
+    tdp = clamp(1/0.75 * (tl + tr + bc) - 1.5 * (bl + br) - 0.9 * (ml + mr), 0.0, 1.0)
+    circle = clamp(tc + bc + ml + mr -0.25 * (tl + tr + bl + br), 0.0, 1.0)
 
     return sqp, max(tup, tdp), circle
 

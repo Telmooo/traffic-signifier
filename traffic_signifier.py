@@ -11,8 +11,12 @@ import cv2 as cv
 import pandas as pd
 
 def preprocess_image(bgr_image):
-    out_image = imp.hsv_clahe_equalization(
+    out_image = imp.attenuate_sky_light(
         bgr_image=bgr_image,
+        sky_threshold=0.30
+    )
+    out_image = imp.hsv_clahe_equalization(
+        bgr_image=out_image,
         clipLimit=2.0,
         tileGridSize=(8, 8)
     )
@@ -123,16 +127,16 @@ def detect_shape(roi, roi_type, return_probabilities = False):
         for j in range(n_classes):
             shape_class = classes[j]
             class_ratio = table[shape_class]
-            probability_table[i, j] = abs(ratio - class_ratio) ** 2 # / class_ratio
+            probability_table[i, j] = abs(ratio - class_ratio) # / (class_ratio + 1e-6)
         
         probability_table[i, n_classes] = np.sum(probability_table[i, 0:n_classes])
-        probability_table[i, 0:n_classes] = (1 - (probability_table[i, 0:n_classes] / (probability_table[i, n_classes] + 1e-6))) / (n_classes - 1)
+        probability_table[i, 0:n_classes] = (1 - (probability_table[i, 0:n_classes] / (probability_table[i, n_classes] + 1e-6))) #/ (n_classes - 1)
         probability_table[i, n_classes] = np.sum(probability_table[i, 0:n_classes])
 
     # Add corners row
     probability_table[n_metrics - 1, :n_classes] = np.array([circle, sqp, circle, trg])
-    probability_table[n_metrics - 1, n_classes] = np.sum(probability_table[n_metrics - 1, 0:n_classes])
-    probability_table[n_metrics - 1, :n_classes] /= (probability_table[n_metrics - 1, n_classes] + 1e-6)
+    # probability_table[n_metrics - 1, n_classes] = np.sum(probability_table[n_metrics - 1, 0:n_classes])
+    # probability_table[n_metrics - 1, :n_classes] /= (probability_table[n_metrics - 1, n_classes] + 1e-6)
 
     probability_table[-1, :n_classes] = np.mean(probability_table[:-1, :-1], axis=0)
     probability_table[-1, n_classes] = np.sum(probability_table[-1, 0:n_classes])
@@ -187,6 +191,7 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
     # Old Segmentation - prone to intense blues on the sky
     # red_image = imp.segment_reds(processed_image)
     # blue_image = imp.segment_blues(processed_image)
+
     red_image, blue_image = imp.segment(processed_image)
 
     red_edges = imp.edge_detection(red_image)
