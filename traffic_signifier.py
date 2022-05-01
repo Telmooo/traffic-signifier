@@ -13,7 +13,7 @@ import pandas as pd
 def preprocess_image(bgr_image):
     out_image = imp.attenuate_sky_light(
         bgr_image=bgr_image,
-        sky_threshold=0.30
+        sky_threshold=0.40
     )
     out_image = imp.hsv_clahe_equalization(
         bgr_image=out_image,
@@ -148,19 +148,31 @@ def detect_shape(roi, roi_type, return_probabilities = False):
         if max_corner == 1: # quadrilateral
             chosen_shape = "other"
         elif (max_corner == 0 or max_corner == 2) and corner_prob > CORNER_THRESHOLD: # circle | octagon
-            max_color_ratio = np.argmax(probability_table[metrics.index("color_ratio"), :n_classes])
-            if max_color_ratio == 2:
+            color_ratio = np.array([probability_table[metrics.index("color_ratio"), 0], probability_table[metrics.index("color_ratio"), 2]])
+            max_color_ratio = np.argmax(color_ratio)
+            max_color_ratio_prob = color_ratio[max_color_ratio]
+            if max_color_ratio == 1 and max_color_ratio_prob > 0.8:
                 chosen_shape = "octagon"
+            elif max_color_ratio == 0 and max_color_ratio_prob > 0.8:
+                chosen_shape = "circle"
             else:
-                max_circle_extent = np.argmax(probability_table[metrics.index("circle_extent"), :n_classes])
-                if max_circle_extent == 0 or max_circle_extent == 2:
-                    chosen_shape = "circle"
-                else:
-                    max_circularity = np.argmax(probability_table[metrics.index("circularity"), :n_classes])
-                    if max_circularity == 0 or max_circularity == 2:
+                circularity = np.mean(np.vstack([
+                    probability_table[metrics.index("circularity"), :n_classes],
+                    probability_table[metrics.index("circle_extent"), :n_classes]
+                    ]), axis=0
+                )
+                max_circularity = np.argmax(circularity)
+                max_circularity_prob = circularity[max_circularity]
+
+                if max_circularity_prob > 0.8:
+                    if max_circularity == 0:
                         chosen_shape = "circle"
+                    elif max_circularity == 2:
+                        chosen_shape = "octagon"
                     else:
                         chosen_shape = "other"
+                else:
+                    chosen_shape = "other"
         elif corner_prob > CORNER_THRESHOLD: # triangle
             max_color_ratio = np.argmax(probability_table[metrics.index("color_ratio"), :n_classes])
             if max_color_ratio == 0 or max_color_ratio == 3: # circle | triangle
