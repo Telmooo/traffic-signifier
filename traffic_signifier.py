@@ -1,5 +1,6 @@
 import utils.image_processing as imp
 import utils.xml_parser as xp
+from sklearn.metrics import classification_report
 
 import os
 from collections import defaultdict
@@ -141,13 +142,13 @@ def detect_shape(roi, roi_type, return_probabilities = False):
     probability_table[-1, :n_classes] = np.mean(probability_table[:-1, :-1], axis=0)
     probability_table[-1, n_classes] = np.sum(probability_table[-1, 0:n_classes])
 
-    CORNER_THRESHOLD = 0.60
+    CORNER_THRESHOLD = 0.55
 
     if roi_type == "red":
         max_corner = np.argmax(probability_table[metrics.index("corners"), :n_classes])
         corner_prob = probability_table[metrics.index("corners"), max_corner]
         if corner_prob < 0.40:
-            circularity = np.mean([
+            circularity = np.max([
                     probability_table[metrics.index("circularity"), 0],
                     probability_table[metrics.index("circle_extent"), 0]
                 ])
@@ -211,7 +212,7 @@ def detect_shape(roi, roi_type, return_probabilities = False):
             max_corner = np.argmax(probability_table[metrics.index("corners"), :n_classes])
             corner_prob = probability_table[metrics.index("corners"), max_corner]
             if corner_prob < 0.40:
-                circularity = np.mean([
+                circularity = np.max([
                         probability_table[metrics.index("circularity"), 0],
                         probability_table[metrics.index("circle_extent"), 0]
                     ])
@@ -280,6 +281,7 @@ def cvt_annot_sign_type(type: str) -> str:
         'trafficlight': '',
     }[type]
 
+    
 
 def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict : dict, save_all : bool, stack_images : bool) -> list:
     signs_identified = []
@@ -289,7 +291,7 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
                 'image': name,
                 'index': i,
                 'class': cvt_annot_sign_type(a['name']),
-                'identified': False,
+                'predicted': 'none',
                 'xmin': a['xmin'],
                 'ymin': a['ymin'],
                 'w': a['xmax'] - a['xmin'],
@@ -350,7 +352,7 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
                     s['w'] + 2 * ROI_MARGIN > w and
                     s['h'] + 2 * ROI_MARGIN > h
                 ):
-                s['identified'] = True
+                s['predicted'] = o_class
                 return
 
     for roi in red_roi:
@@ -401,7 +403,14 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
 
     return signs_identified
 
+
+def show_stats(df):
+    # df = pd.read_csv('./out/results.csv')
+    print(f"Accuracy: {df[df['class'] == df['predicted']]['predicted'].count() / df['predicted'].count()}")
+    print(df[df['class'] == df['predicted']].groupby('class')['predicted'].count() / df.groupby('class')['predicted'].count())
+
 if __name__ == '__main__':
+
     import argparse
     import sys
     
@@ -461,9 +470,12 @@ if __name__ == '__main__':
             stack_images=stackImages,
             annot_dict=annot_dict
         )
-        os.makedirs(os.path.join(outPath, 'results'), exist_ok=True)
-        pd.DataFrame([results]).set_index(['image', 'index']).to_csv(os.path.join(outPath, 'results', f'{filename}.csv'))
-
+        
+        if annotationsPath and len(results) > 0:
+            os.makedirs(os.path.join(outPath, 'results'), exist_ok=True)
+            df = pd.DataFrame(results).set_index(['image', 'index'])
+            df.to_csv(os.path.join(outPath, 'results', f'{filename}.csv'))
+            show_stats(df)  
     elif isDir:
         
         if annotationsPath:
@@ -484,6 +496,10 @@ if __name__ == '__main__':
                     annot_dict=annot_dict
                 )
         
-        pd.DataFrame(results).set_index(['image', 'index']).to_csv(os.path.join(outPath, 'results.csv'))
+        if annotationsPath and len(results) > 0:
+            df = pd.DataFrame(results).set_index(['image', 'index'])
+            df.to_csv(os.path.join(outPath, 'results.csv'))
+            show_stats(df)
     else:
         print(f"Path {path} is unrecognized. Please verify if path corresponds to valid file or directory.", file=sys.stderr)
+        

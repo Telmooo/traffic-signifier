@@ -317,7 +317,7 @@ def extractROI(edge_image, red_image, blue_image, white_black_image, roi_type):
         (x, y, w, h), contours = rois[i]
         roi_size = w * h
 
-        SIZE_THRESHOLD = 15 * 15
+        SIZE_THRESHOLD = 10 * 10
         if roi_size < SIZE_THRESHOLD:
             rois.pop(i)
             continue
