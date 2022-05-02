@@ -13,7 +13,7 @@ import pandas as pd
 def preprocess_image(bgr_image):
     out_image = imp.attenuate_sky_light(
         bgr_image=bgr_image,
-        sky_threshold=0.40
+        sky_threshold=0.50
     )
     out_image = imp.hsv_clahe_equalization(
         bgr_image=out_image,
@@ -243,7 +243,7 @@ def save_images(outDir, output_dict):
         path = f"{directory}/{name}.png"
         cv.imwrite(path, image)
 
-def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict : dict, save_all : bool):
+def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict : dict, save_all : bool, stack_images : bool):
     image = cv.imread(image_path)
     
     processed_image = preprocess_image(image)
@@ -305,14 +305,25 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
             cv.putText(output_image, output_class, (x, y - 5), cv.FONT_HERSHEY_SIMPLEX, 0.6, (25, 255, 40), 2, cv.LINE_AA)
 
     if save_all:
-        output = {
-            f"{name}_processed": ("processed", processed_image),
-            f"{name}_red_segment": ("red_segmentation", cv.cvtColor(red_image, cv.COLOR_GRAY2BGR)),
-            f"{name}_blue_segment": ("blue_segmentation", cv.cvtColor(blue_image, cv.COLOR_GRAY2BGR)),
-            f"{name}_red_roi": ("red_roi", roi_red_image),
-            f"{name}_blue_roi": ("blue_roi", roi_blue_image),
-            f"{name}_output": ("output", output_image),
-        }
+        if stack_images:
+            hstack_1 = cv.hconcat([processed_image, cv.cvtColor(red_image, cv.COLOR_GRAY2BGR), cv.cvtColor(red_edges, cv.COLOR_GRAY2BGR), roi_red_image])
+            hstack_2 = cv.hconcat([cv.cvtColor(blue_image, cv.COLOR_GRAY2BGR), cv.cvtColor(blue_edges, cv.COLOR_GRAY2BGR), roi_blue_image, output_image])
+            final_stack = cv.vconcat([hstack_1, hstack_2])
+            output = {
+                f"{name}_stack": ("stack", final_stack),
+                f"{name}_output": ("output", output_image),
+            }
+        else:
+            output = {
+                f"{name}_processed": ("processed", processed_image),
+                f"{name}_red_segment": ("red_segmentation", cv.cvtColor(red_image, cv.COLOR_GRAY2BGR)),
+                f"{name}_blue_segment": ("blue_segmentation", cv.cvtColor(blue_image, cv.COLOR_GRAY2BGR)),
+                f"{name}_red_edges": ("red_edges", cv.cvtColor(red_edges, cv.COLOR_GRAY2BGR)),
+                f"{name}_blue_edges": ("blue_edges", cv.cvtColor(blue_edges, cv.COLOR_GRAY2BGR)),
+                f"{name}_red_roi": ("red_roi", roi_red_image),
+                f"{name}_blue_roi": ("blue_roi", roi_blue_image),
+                f"{name}_output": ("output", output_image),
+            }
     else:
         output = {
             f"{name}_output": ("output", output_image),
@@ -347,6 +358,11 @@ if __name__ == '__main__':
         help="Controls the verbosity, if enable the program will output more messages and save more images related to the processing."
     )
 
+    parser.add_argument(
+        "--stack", action="store_true",
+        help="Needs verbosity active. Stacks all images generated into the same image."
+    )
+
     args = parser.parse_args()
 
     path = args.path
@@ -354,6 +370,7 @@ if __name__ == '__main__':
     annotationsPath = args.annotations
     
     verbose = args.verbose
+    stackImages = args.stack
     isFile = os.path.isfile(path)
     isDir = os.path.isdir(path)
     
@@ -369,6 +386,7 @@ if __name__ == '__main__':
             image_path=path,
             outDir=outPath,
             save_all=verbose,
+            stack_images=stackImages,
             annot_dict=annot_dict
         )
     elif isDir:
@@ -386,6 +404,7 @@ if __name__ == '__main__':
                     image_path=os.path.join(path, file),
                     outDir=outPath, 
                     save_all=verbose,
+                    stack_images=stackImages,
                     annot_dict=annot_dict
                 )
         pass

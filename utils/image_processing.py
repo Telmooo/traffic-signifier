@@ -200,42 +200,38 @@ def segment(bgr_image):
     smooth_image = cv.edgePreservingFilter(bgr_image, flags=cv.NORMCONV_FILTER, sigma_s=50, sigma_r=0.5)
     B, G, R = cv.split(smooth_image)
     hsv_image = cv.cvtColor(smooth_image, cv.COLOR_BGR2HSV)    
-    _, S, _ = cv.split(hsv_image)
+    H, S, V = cv.split(hsv_image)
 
-    B, G, R = np.float64(B), np.float64(G), np.float64(R)
-    S = np.float64(S)
+    B, G, R = np.float64(B) / 255.0, np.float64(G) / 255.0, np.float64(R) / 255.0
+    H, S, V = np.float64(H) / 179.0 * 360.0, np.float64(S) / 255.0, np.float64(V) / 255.0
 
     M, N, _ = smooth_image.shape
     hd_blue = np.zeros(shape=(M, N), dtype=np.float64)
     hd_red = np.zeros(shape=(M, N), dtype=np.float64)
     sd = np.zeros(shape=(M, N), dtype=np.float64)
     
-    RED_TH = 40
-    BLUE_TH = 40
-    for i in range(M):
-        for j in range(N):
-            b, g, r = B[i, j], G[i, j], R[i, j]
-            sat = S[i, j]
-            max_channel = np.argmax([b, g, r])
-            maxI = np.max([b, g, r])
-            minI = np.min([b, g, r])
+    RED_TH_1 = 20
+    RED_TH_2 = 325
+    RED_S_TH = 0.40
+    RED_V_TH = 0.10
 
-            if max_channel == 0: # B
-                hd_blue[i, j] = 1.0 - np.abs(r - g) / (maxI - minI + 1e-6) if (maxI - minI) > BLUE_TH else 0
-                hd_red[i, j] = 0
-            elif max_channel == 2: # R
-                hd_red[i, j] = 1.0 - np.abs(g - b) / (maxI - minI + 1e-6) if (maxI - minI) > RED_TH else 0
-                hd_blue[i, j] = 0
-            else:
-                hd_blue[i, j] = 0
-                hd_red[i, j] = 0
-            sd[i, j] = sat / 255.0
+    BLUE_TH_L = 210
+    BLUE_TH_H = 255
+    BLUE_S_TH = 0.45
+    BLUE_V_TH = 0.10
 
-    hs_red = np.uint8(hd_red * sd * 255)
-    hs_blue = np.uint8(hd_blue * sd * 255)
+    hd_red[(H < RED_TH_1) & (S > RED_S_TH) & (V > RED_V_TH)] = 1.0
+    hd_red[(H > RED_TH_2) & (S > RED_S_TH) & (V > RED_V_TH)] = 1.0
 
-    hs_red = binarize(gray_image=hs_red, threshold_percent=0.5)
-    hs_blue = binarize(gray_image=hs_blue, threshold_percent=0.5)
+    hd_blue[(H > BLUE_TH_L) & (H < BLUE_TH_H) & (S > BLUE_S_TH) & (V > BLUE_V_TH)] = 1.0
+
+    hs_red = np.uint8(hd_red * 255)
+    hs_blue = np.uint8(hd_blue * 255)
+
+    # BIN_THRESHOLD = 0.5
+    # threshold = int(255 * BIN_THRESHOLD)
+    # ret_red_thresh, hs_red = cv.threshold(hs_red, threshold, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+    # ret_blue_thresh, hs_blue = cv.threshold(hs_blue, threshold, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
 
     kernel = cv.getStructuringElement(shape=cv.MORPH_ELLIPSE, ksize=(3, 3))
     hs_red = cv.morphologyEx(hs_red, cv.MORPH_ERODE, kernel=kernel)
