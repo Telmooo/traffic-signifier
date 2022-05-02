@@ -1,6 +1,5 @@
 import utils.image_processing as imp
 import utils.xml_parser as xp
-from sklearn.metrics import classification_report
 
 import os
 from collections import defaultdict
