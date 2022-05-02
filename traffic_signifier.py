@@ -13,12 +13,13 @@ import pandas as pd
 def preprocess_image(bgr_image):
     out_image = imp.attenuate_sky_light(
         bgr_image=bgr_image,
-        sky_threshold=0.50
+        sky_threshold=0.40,
+        max_blue_threshold=0.85
     )
     out_image = imp.hsv_clahe_equalization(
         bgr_image=out_image,
-        clipLimit=2.0,
-        tileGridSize=(8, 8)
+        clipLimit=3.0,
+        tileGridSize=(15, 15)
     )
     out_image = imp.automatic_brightness_contrast(
         bgr_image=out_image,
@@ -79,7 +80,7 @@ output_classes = defaultdict(lambda: "unknown", {
 })
 
 def detect_shape(roi, roi_type, return_probabilities = False):
-    (brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, red_blue_ratio, contourArea, sqp, trg, circle = roi
+    (brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea, sqp, trg, circle = roi
 
     contourPerimeter = cv.arcLength(contour, True)
     # Bounding Rectangle Area - used to calculate extent of contour
@@ -145,85 +146,113 @@ def detect_shape(roi, roi_type, return_probabilities = False):
     if roi_type == "red":
         max_corner = np.argmax(probability_table[metrics.index("corners"), :n_classes])
         corner_prob = probability_table[metrics.index("corners"), max_corner]
-        if max_corner == 1: # quadrilateral
-            chosen_shape = "other"
-        elif (max_corner == 0 or max_corner == 2) and corner_prob > CORNER_THRESHOLD: # circle | octagon
-            color_ratio = np.array([probability_table[metrics.index("color_ratio"), 0], probability_table[metrics.index("color_ratio"), 2]])
-            max_color_ratio = np.argmax(color_ratio)
-            max_color_ratio_prob = color_ratio[max_color_ratio]
-            if max_color_ratio == 1 and max_color_ratio_prob > 0.8:
-                chosen_shape = "octagon"
-            elif max_color_ratio == 0 and max_color_ratio_prob > 0.8:
-                chosen_shape = "circle"
-            else:
-                circularity = np.mean(np.vstack([
-                    probability_table[metrics.index("circularity"), :n_classes],
-                    probability_table[metrics.index("circle_extent"), :n_classes]
-                    ]), axis=0
-                )
-                max_circularity = np.argmax(circularity)
-                max_circularity_prob = circularity[max_circularity]
-
-                if max_circularity_prob > 0.8:
-                    if max_circularity == 0:
-                        chosen_shape = "circle"
-                    elif max_circularity == 2:
-                        chosen_shape = "octagon"
-                    else:
-                        chosen_shape = "other"
+        if corner_prob < 0.40:
+            circularity = np.mean([
+                    probability_table[metrics.index("circularity"), 0],
+                    probability_table[metrics.index("circle_extent"), 0]
+                ])
+            if circularity > 0.90:
+                color_ratio = np.array([probability_table[metrics.index("color_ratio"), 0], probability_table[metrics.index("color_ratio"), 2]])
+                max_color_ratio = np.argmax(color_ratio)
+                max_color_ratio_prob = color_ratio[max_color_ratio]
+                if max_color_ratio == 1 and max_color_ratio_prob > 0.8:
+                    chosen_shape = "octagon"
+                elif max_color_ratio == 0 and max_color_ratio_prob > 0.8:
+                    chosen_shape = "circle"
                 else:
                     chosen_shape = "other"
-        elif corner_prob > CORNER_THRESHOLD: # triangle
-            max_color_ratio = np.argmax(probability_table[metrics.index("color_ratio"), :n_classes])
-            if max_color_ratio == 0 or max_color_ratio == 3: # circle | triangle
-                max_circle_extent = np.argmax(probability_table[metrics.index("circle_extent"), :n_classes])
-                if max_circle_extent == 0 or max_circle_extent == 2:
-                    chosen_shape = "other"
-                else:
-                    chosen_shape = "triangle"
             else:
                 chosen_shape = "other"
         else:
-            chosen_shape = "other"
+            if max_corner == 1: # quadrilateral
+                chosen_shape = "other"
+            elif (max_corner == 0 or max_corner == 2) and corner_prob > CORNER_THRESHOLD: # circle | octagon
+                color_ratio = np.array([probability_table[metrics.index("color_ratio"), 0], probability_table[metrics.index("color_ratio"), 2]])
+                max_color_ratio = np.argmax(color_ratio)
+                max_color_ratio_prob = color_ratio[max_color_ratio]
+                if max_color_ratio == 1 and max_color_ratio_prob > 0.8:
+                    chosen_shape = "octagon"
+                elif max_color_ratio == 0 and max_color_ratio_prob > 0.8:
+                    chosen_shape = "circle"
+                else:
+                    circularity = np.mean(np.vstack([
+                        probability_table[metrics.index("circularity"), :n_classes],
+                        probability_table[metrics.index("circle_extent"), :n_classes]
+                        ]), axis=0
+                    )
+                    max_circularity = np.argmax(circularity)
+                    max_circularity_prob = circularity[max_circularity]
+
+                    if max_circularity_prob > 0.8:
+                        if max_circularity == 0:
+                            chosen_shape = "circle"
+                        elif max_circularity == 2:
+                            chosen_shape = "octagon"
+                        else:
+                            chosen_shape = "other"
+                    else:
+                        chosen_shape = "other"
+            elif corner_prob > CORNER_THRESHOLD: # triangle
+                max_color_ratio = np.argmax(probability_table[metrics.index("color_ratio"), :n_classes])
+                if max_color_ratio == 0 or max_color_ratio == 3: # circle | triangle
+                    max_circle_extent = np.argmax(probability_table[metrics.index("circle_extent"), :n_classes])
+                    if max_circle_extent == 0 or max_circle_extent == 2:
+                        chosen_shape = "other"
+                    else:
+                        chosen_shape = "triangle"
+                else:
+                    chosen_shape = "other"
+            else:
+                chosen_shape = "other"
 
     elif roi_type == "blue":
         max_color_ratio = np.argmax(probability_table[metrics.index("color_ratio"), :n_classes])
         if max_color_ratio == 0 or max_color_ratio == 1: # circle | quadrilateral
             max_corner = np.argmax(probability_table[metrics.index("corners"), :n_classes])
             corner_prob = probability_table[metrics.index("corners"), max_corner]
-            if (max_corner == 0 or max_corner == 2) and corner_prob > CORNER_THRESHOLD: # circle | octagon
-                circularity = np.mean(np.vstack([
-                    probability_table[metrics.index("circularity"), :n_classes],
-                    probability_table[metrics.index("circle_extent"), :n_classes]
-                    ]), axis=0
-                )
-                max_circularity = np.argmax(circularity)
-
-                if max_circularity == 0 or max_circularity == 2:
+            if corner_prob < 0.40:
+                circularity = np.mean([
+                        probability_table[metrics.index("circularity"), 0],
+                        probability_table[metrics.index("circle_extent"), 0]
+                    ])
+                if circularity > 0.90:
                     chosen_shape = "circle"
                 else:
                     chosen_shape = "other"
+            else:
+                if (max_corner == 0 or max_corner == 2) and corner_prob > CORNER_THRESHOLD: # circle | octagon
+                    circularity = np.mean(np.vstack([
+                        probability_table[metrics.index("circularity"), :n_classes],
+                        probability_table[metrics.index("circle_extent"), :n_classes]
+                        ]), axis=0
+                    )
+                    max_circularity = np.argmax(circularity)
 
-            elif max_corner == 1 and corner_prob > CORNER_THRESHOLD: # quadrilateral
-                avg_prob = np.mean(probability_table[:-1, :-1], axis=0)
-                quad_avg_prob = avg_prob[classes.index("quadrilateral")]
-                if quad_avg_prob > 0.7:
-                    chosen_shape = "quadrilateral"
-                else:
-                    chosen_shape = "other"
-            elif corner_prob > CORNER_THRESHOLD: # triangle
-                avg_prob = np.mean(probability_table[:-1, :-1], axis=0)
-                max_avg_prob = np.argmax(avg_prob)
-                if max_avg_prob != 1:
-                    chosen_shape = "other"
-                else: 
+                    if max_circularity == 0 or max_circularity == 2:
+                        chosen_shape = "circle"
+                    else:
+                        chosen_shape = "other"
+
+                elif max_corner == 1 and corner_prob > CORNER_THRESHOLD: # quadrilateral
+                    avg_prob = np.mean(probability_table[:-1, :-1], axis=0)
                     quad_avg_prob = avg_prob[classes.index("quadrilateral")]
                     if quad_avg_prob > 0.7:
                         chosen_shape = "quadrilateral"
                     else:
                         chosen_shape = "other"
-            else:
-                chosen_shape = "other"
+                elif corner_prob > CORNER_THRESHOLD: # triangle
+                    avg_prob = np.mean(probability_table[:-1, :-1], axis=0)
+                    max_avg_prob = np.argmax(avg_prob)
+                    if max_avg_prob != 1:
+                        chosen_shape = "other"
+                    else: 
+                        quad_avg_prob = avg_prob[classes.index("quadrilateral")]
+                        if quad_avg_prob > 0.7:
+                            chosen_shape = "quadrilateral"
+                        else:
+                            chosen_shape = "other"
+                else:
+                    chosen_shape = "other"
         else:
             chosen_shape = "other"
 
@@ -252,44 +281,44 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
     # red_image = imp.segment_reds(processed_image)
     # blue_image = imp.segment_blues(processed_image)
 
-    red_image, blue_image = imp.segment(processed_image)
+    red_image, blue_image, white_black_image = imp.segment(processed_image)
 
     red_edges = imp.edge_detection(red_image)
     blue_edges = imp.edge_detection(blue_image)
 
-    red_roi = imp.extractROI(red_edges, red_image=red_image, blue_image=blue_image, roi_type="red")
-    blue_roi = imp.extractROI(blue_edges, red_image=red_image, blue_image=blue_image, roi_type="blue")
+    red_roi = imp.extractROI(red_edges, red_image=red_image, blue_image=blue_image, white_black_image=white_black_image, roi_type="red")
+    blue_roi = imp.extractROI(blue_edges, red_image=red_image, blue_image=blue_image, white_black_image=white_black_image, roi_type="blue")
 
     roi_red_image = np.zeros(shape=(red_edges.shape + (3,)), dtype=np.uint8)
     for roi in red_roi:
-        (x, y, w, h), contours, _, _, _, _ = roi
+        (x, y, w, h), contours, _, _, _, _, _ = roi
         cv.rectangle(roi_red_image, (int(x), int(y)), (int(x+w), int(y+h)), (197, 183, 255), 1)
         cv.drawContours(roi_red_image, [contours], 0, color=(255, 255, 255))
 
     roi_blue_image = np.zeros(shape=(blue_edges.shape + (3,)), dtype=np.uint8)
     for roi in blue_roi:
-        (x, y, w, h), contours, _, _, _, _ = roi
+        (x, y, w, h), contours, _, _, _, _, _ = roi
         cv.rectangle(roi_blue_image, (int(x), int(y)), (int(x+w), int(y+h)), (197, 183, 255), 1)
         cv.drawContours(roi_blue_image, [contours], 0, color=(255, 255, 255))
 
     # Get corner info
     for i in range(len(red_roi)):
         roi = red_roi[i]
-        (brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, red_blue_ratio, contourArea = roi
+        (brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea = roi
         sqp, trg, circle = imp.corner_detection(roi)
-        red_roi[i] = ((brect_x, brect_y, brect_w, brect_h), contour,  red_ratio, blue_ratio, red_blue_ratio, contourArea, sqp, trg, circle)
+        red_roi[i] = ((brect_x, brect_y, brect_w, brect_h), contour,  red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea, sqp, trg, circle)
 
     for i in range(len(blue_roi)):
         roi = blue_roi[i]
-        (brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, red_blue_ratio, contourArea = roi
+        (brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea = roi
         sqp, trg, circle = imp.corner_detection(roi)
-        blue_roi[i] = ((brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, red_blue_ratio, contourArea, sqp, trg, circle)
+        blue_roi[i] = ((brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea, sqp, trg, circle)
 
     output_image = image.copy()
 
     for roi in red_roi:
         shape = detect_shape(roi, "red", return_probabilities=False)
-        (x, y, w, h), contours, red_ratio, blue_ratio, red_blue_ratio, contourArea, sqp, trg, circle = roi
+        (x, y, w, h), contours, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea, sqp, trg, circle = roi
 
         if shape != "other":
             cv.drawContours(output_image, [contours], 0, color=(25, 255, 40), thickness=2)
@@ -298,7 +327,7 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
 
     for roi in blue_roi:
         shape = detect_shape(roi, "blue", return_probabilities=False)
-        (x, y, w, h), contours, red_ratio, blue_ratio, red_blue_ratio, contourArea, sqp, trg, circle = roi
+        (x, y, w, h), contours, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea, sqp, trg, circle = roi
         if shape != "other":
             cv.drawContours(output_image, [contours], 0, color=(25, 255, 40), thickness=2)
             output_class = output_classes[(shape, "blue")]

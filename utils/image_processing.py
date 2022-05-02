@@ -19,7 +19,7 @@ def segment_sky(bgr_image):
     hsv_image = cv.cvtColor(bgr_image, cv.COLOR_BGR2HSV)
 
     # Light blue sky zone
-    lowerbound = np.array([85, 40, 150])
+    lowerbound = np.array([85, 60, 130])
     upperbound = np.array([108, 255, 255])
 
     mask = cv.inRange(hsv_image, lowerbound, upperbound)
@@ -34,13 +34,19 @@ def segment_sky(bgr_image):
 
     return gray_image
 
-def attenuate_sky_light(bgr_image, sky_threshold = 0.3):
+def attenuate_sky_light(bgr_image, sky_threshold = 0.4, max_blue_threshold = 0.85):
+    max_pixels = np.argmax(bgr_image, axis=2)
+    max_blue_pixels = max_pixels[max_pixels == 0].size
+
     sky_image = segment_sky(bgr_image)
     sky_pixels = sky_image[sky_image > 127].size
     total_pixels = sky_image.size
+    max_blue_ratio = float(max_blue_pixels) / total_pixels
     sky_ratio = float(sky_pixels) / total_pixels
 
-    if sky_ratio > sky_threshold:
+    SKY_THRESHOLD = 0.40
+    MAX_BLUE_THRESHOLD = 0.85
+    if sky_ratio > SKY_THRESHOLD and max_blue_ratio > MAX_BLUE_THRESHOLD:
         B, G, R = cv.split(bgr_image)
         return cv.merge([cv.equalizeHist(B), cv.equalizeHist(G), cv.equalizeHist(R)])
     else:
@@ -80,9 +86,8 @@ def automatic_brightness_contrast(bgr_image, clip_hist_percent = 0.01, use_scale
     if use_scale_abs:
         processed_image = cv.convertScaleAbs(bgr_image, alpha=alpha, beta=beta)
     else:
-        processed_image = bgr_image * alpha + beta
-        processed_image[processed_image < 0] = 0
-        processed_image[processed_image > 255] = 255
+        processed_image = np.uint8(np.abs(bgr_image * alpha + beta))
+        processed_image = np.clip(processed_image, 0, 255)
 
     if return_verbose:
         processed_hist = cv.calcHist([gray_image], [0], None, [256], [minimum_gray, maximum_gray])
@@ -197,7 +202,7 @@ def segment_blues(bgr_image):
     return gray_image
 
 def segment(bgr_image):
-    smooth_image = cv.edgePreservingFilter(bgr_image, flags=cv.NORMCONV_FILTER, sigma_s=50, sigma_r=0.5)
+    smooth_image = cv.edgePreservingFilter(bgr_image, flags=cv.NORMCONV_FILTER, sigma_s=50, sigma_r=0.25)
     B, G, R = cv.split(smooth_image)
     hsv_image = cv.cvtColor(smooth_image, cv.COLOR_BGR2HSV)    
     H, S, V = cv.split(hsv_image)
@@ -208,35 +213,33 @@ def segment(bgr_image):
     M, N, _ = smooth_image.shape
     hd_blue = np.zeros(shape=(M, N), dtype=np.float64)
     hd_red = np.zeros(shape=(M, N), dtype=np.float64)
-    sd = np.zeros(shape=(M, N), dtype=np.float64)
+    hd_white_black = np.zeros(shape=(M, N), dtype=np.float64)
     
-    RED_TH_1 = 20
-    RED_TH_2 = 325
-    RED_S_TH = 0.40
+    RED_TH_1 = 25
+    RED_TH_2 = 315
+    RED_S_TH = 0.35
     RED_V_TH = 0.10
 
-    BLUE_TH_L = 210
+    BLUE_TH_L = 200
     BLUE_TH_H = 255
     BLUE_S_TH = 0.45
-    BLUE_V_TH = 0.10
+    BLUE_V_TH = 0.15
 
-    hd_red[(H < RED_TH_1) & (S > RED_S_TH) & (V > RED_V_TH)] = 1.0
-    hd_red[(H > RED_TH_2) & (S > RED_S_TH) & (V > RED_V_TH)] = 1.0
+    WHITE_S_TH = 0.1
+    BLACK_V_TH = 0.1
 
-    hd_blue[(H > BLUE_TH_L) & (H < BLUE_TH_H) & (S > BLUE_S_TH) & (V > BLUE_V_TH)] = 1.0
+    hd_red[(H <= RED_TH_1) & (S >= RED_S_TH) & (V >= RED_V_TH)] = 1.0
+    hd_red[(H >= RED_TH_2) & (S >= RED_S_TH) & (V >= RED_V_TH)] = 1.0
+
+    hd_blue[(H >= BLUE_TH_L) & (H <= BLUE_TH_H) & (S >= BLUE_S_TH) & (V >= BLUE_V_TH)] = 1.0
+
+    hd_white_black[(S <= WHITE_S_TH) | (V <= BLACK_V_TH)] = 1.0
 
     hs_red = np.uint8(hd_red * 255)
     hs_blue = np.uint8(hd_blue * 255)
+    hs_white_black = np.uint8(hd_white_black * 255)
 
-    # BIN_THRESHOLD = 0.5
-    # threshold = int(255 * BIN_THRESHOLD)
-    # ret_red_thresh, hs_red = cv.threshold(hs_red, threshold, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
-    # ret_blue_thresh, hs_blue = cv.threshold(hs_blue, threshold, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
-
-    kernel = cv.getStructuringElement(shape=cv.MORPH_ELLIPSE, ksize=(3, 3))
-    hs_red = cv.morphologyEx(hs_red, cv.MORPH_ERODE, kernel=kernel)
-
-    return hs_red, hs_blue
+    return hs_red, hs_blue, hs_white_black
 
 """
 RoI Extraction
@@ -253,10 +256,12 @@ def getConvexHulls(contours):
 
 def edge_detection(gray_image):
     # Apply morphological operation to soften possible artefacts
-    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, ksize=(3, 3))
-    morph_image = cv.morphologyEx(gray_image, cv.MORPH_CLOSE, kernel, iterations=1)
+    # kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, ksize=(3, 3))
+    # morph_image = cv.morphologyEx(gray_image, cv.MORPH_CLOSE, kernel, iterations=1)
+    # morph_image = gray_image.copy()
 
-    return cv.Canny(morph_image, threshold1=100, threshold2=200, apertureSize=5)
+    #return cv.Canny(morph_image, threshold1=100, threshold2=200, apertureSize=5)
+    return cv.adaptiveThreshold(gray_image, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 3, 10)
 
 def mergeROI(rois):
     # Sort RoI by X-coordinate and width to merge RoI
@@ -290,19 +295,19 @@ def mergeROI(rois):
         i += 1
     return sorted_rois
 
-def extractROI(edge_image, red_image, blue_image, roi_type):
-    kernel = cv.getStructuringElement(shape=cv.MORPH_ELLIPSE, ksize=(3, 3))
-    morph_image = cv.morphologyEx(edge_image, cv.MORPH_DILATE, kernel, iterations=1)
-    contours = getContours(morph_image)
+def extractROI(edge_image, red_image, blue_image, white_black_image, roi_type):
+    # kernel = cv.getStructuringElement(shape=cv.MORPH_ELLIPSE, ksize=(3, 3))
+    # morph_image = cv.morphologyEx(edge_image, cv.MORPH_DILATE, kernel, iterations=1)
+    morph_image = edge_image.copy()
+    contours, hierarchy = cv.findContours(morph_image, cv.RETR_LIST, cv.CHAIN_APPROX_NONE)
 
     # Apply convex hulls to close off shapes
-    contours = getConvexHulls(contours)
+    # contours = [cv.convexHull(contour) for contour in contours]
 
     # Approximate contour
     contours = [cv.approxPolyDP(contour, 0.004 * cv.arcLength(contour, True), True) for contour in contours]
 
     rois = [(cv.boundingRect(contour), contour) for contour in contours]
-
 
     i = 0
     while True:
@@ -317,12 +322,18 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
             rois.pop(i)
             continue
 
+        # contourArea = cv.contourArea(contours)
+        # contourPerimeter = cv.arcLength(contours, True)
+        # if contourArea < contourPerimeter:
+        #     rois.pop(i)
+        #     continue
+
         BIG_SIGN = 50 * 50
         aspect_ratio = float(w) / (h + 1e-6)
         if roi_type == "red":
             if roi_size < BIG_SIGN:
-                ASPECT_RATIO_MIN = 0.7
-                ASPECT_RATIO_MAX = 1.3
+                ASPECT_RATIO_MIN = 0.6
+                ASPECT_RATIO_MAX = 1.4
                 if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
                     rois.pop(i)
                     continue
@@ -335,19 +346,20 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
         elif roi_type == "blue":
             if roi_size < BIG_SIGN:
                 ASPECT_RATIO_MIN = 0.7
-                ASPECT_RATIO_MAX = 1.5
-                if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
+                ASPECT_RATIO_MAX = 3.5
+                if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX:
                     rois.pop(i)
                     continue
             else:
                 ASPECT_RATIO_MIN = 0.45
-                ASPECT_RATIO_MAX = 2.0
+                ASPECT_RATIO_MAX = 3.0
                 if aspect_ratio < ASPECT_RATIO_MIN or aspect_ratio > ASPECT_RATIO_MAX: 
                     rois.pop(i)
                     continue
 
         blue_pixels = 0
         red_pixels = 0
+        white_black_pixels = 0
         contourArea = 0
         for xi in range(x, x+w):
             for yi in range(y, y+h):
@@ -356,10 +368,13 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
                         red_pixels += 1
                     if blue_image[yi, xi] > 127:
                         blue_pixels += 1
+                    if white_black_image[yi, xi] > 127:
+                        white_black_pixels += 1 
                     contourArea += 1
 
         blue_ratio = blue_pixels / (roi_size + 1e-6)
         red_ratio = red_pixels / (roi_size + 1e-6)
+        white_black_ratio = white_black_pixels / (roi_size + 1e-6)
         red_blue_ratio = red_pixels / (blue_pixels + 1e-6)
 
         if roi_type == "red":
@@ -367,34 +382,34 @@ def extractROI(edge_image, red_image, blue_image, roi_type):
                 rois.pop(i)
                 continue
         elif roi_type == "blue":
-            if blue_ratio < 0.4:
+            if blue_ratio < 0.3:
                 rois.pop(i)
                 continue
-            pass
-        rois[i] = ((x, y, w, h), contours, red_ratio, blue_ratio, red_blue_ratio, contourArea)
+        rois[i] = ((x, y, w, h), contours, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea)
 
         i += 1
-        
+    
     rois = mergeROI(rois)
+    
     return rois
 
 """
 Shape detection
 """
 def corner_detection(roi):
-    (x, y, w, h), contours, _, _, _, _ = roi
+    (x, y, w, h), contours, _, _, _, _, _ = roi
     region = np.zeros(shape=(h, w), dtype=np.uint8)
     cv.drawContours(region, [contours], 0, color=(255), offset=(-x, -y))
     region_32f = np.float32(region)
 
-    corners = cv.cornerHarris(region_32f, 6, 3, 0.04)
+    corners = cv.cornerHarris(region_32f, 6, 5, 0.06)
     corners = cv.dilate(corners, None)
 
     norm_corners = np.empty(corners.shape, dtype=np.float32)
     cv.normalize(corners, norm_corners, 255.0, 0.0, cv.NORM_INF)
     norm_corners = cv.convertScaleAbs(norm_corners)
 
-    CORNER_THRESHOLD = 60
+    CORNER_THRESHOLD = 75
 
     ND = 5
     P = 1.0 / ND
@@ -418,9 +433,17 @@ def corner_detection(roi):
         clamp(0.65 * (tl + tr + bl + bc) - br - 0.5 * mr - 0.8 * (tc + ml), 0.0, 1.0), # oriented rightwards down
         clamp(0.65 * (tl + tr + br + bc) - bl - 0.5 * ml - 0.8 * (tc + mr), 0.0, 1.0), # oriented leftwards down
     ])
-    tup = clamp(1/0.75 * (bl + br + tc) - 2.0 * (tl + tr) - 0.9 * (ml + mr), 0.0, 1.0)
-    tdp = clamp(1/0.75 * (tl + tr + bc) - 1.5 * (bl + br) - 0.9 * (ml + mr), 0.0, 1.0)
-    circle = clamp(tc + bc + ml + mr -0.25 * (tl + tr + bl + br), 0.0, 1.0)
+    tup = max([
+        clamp(1/0.75 * (bl + br + tc) - 2.0 * (tl + tr) - 0.9 * (ml + mr), 0.0, 1.0),
+        clamp(1/0.90 * (bl + br + tl) - 2.5 * (tr + mr) - 0.9 * (ml + tc), 0.0, 1.0), # rectangle on bottom left
+        clamp(1/0.90 * (bl + br + tr) - 2.5 * (tl + ml) - 0.9 * (mr + tc), 0.0, 1.0) # rectangle on bottom right
+    ])
+    tdp = max([
+        clamp(1/0.75 * (tl + tr + bc) - 1.5 * (bl + br) - 0.9 * (ml + mr), 0.0, 1.0),
+        clamp(1/0.90 * (tl + tr + bl) - 2.5 * (br + mr) - 0.9 * (ml + bc), 0.0, 1.0), # rectangle on top left
+        clamp(1/0.90 * (tl + tr + br) - 2.5 * (bl + ml) - 0.9 * (mr + bc), 0.0, 1.0) # rectangle on top right
+    ])
+    circle = clamp(tc + bc + ml + mr + 0.2 * (tl + tr + bl + br), 0.0, 1.0)
 
     return sqp, max(tup, tdp), circle
 
