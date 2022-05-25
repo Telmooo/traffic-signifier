@@ -1,3 +1,4 @@
+from typing import List
 import utils.image_processing as imp
 import utils.xml_parser as xp
 
@@ -280,7 +281,17 @@ def cvt_annot_sign_type(type: str) -> str:
         'trafficlight': '',
     }[type]
 
-    
+def check_result(signs: List[dict], o_class: str, x: int, y: int, w: int, h: int):
+    ROI_MARGIN = 20
+    for s in signs:
+        if s['class'] == o_class and (
+                s['xmin'] - ROI_MARGIN < x and
+                s['ymin'] - ROI_MARGIN < y and
+                s['w'] + 2 * ROI_MARGIN > w and
+                s['h'] + 2 * ROI_MARGIN > h
+            ):
+            s['predicted'] = o_class
+            return
 
 def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict : dict, save_all : bool, stack_images : bool) -> list:
     signs_identified = []
@@ -341,18 +352,6 @@ def detect_traffic_signs(name: str, image_path : str, outDir : str, annot_dict :
         blue_roi[i] = ((brect_x, brect_y, brect_w, brect_h), contour, red_ratio, blue_ratio, white_black_ratio, red_blue_ratio, contourArea, sqp, trg, circle)
 
     output_image = image.copy()
-
-    def check_result(signs: list[dict], o_class: str, x: int, y: int, w: int, h: int):
-        ROI_MARGIN = 20
-        for s in signs:
-            if s['class'] == o_class and (
-                    s['xmin'] - ROI_MARGIN < x and
-                    s['ymin'] - ROI_MARGIN < y and
-                    s['w'] + 2 * ROI_MARGIN > w and
-                    s['h'] + 2 * ROI_MARGIN > h
-                ):
-                s['predicted'] = o_class
-                return
 
     for roi in red_roi:
         shape = detect_shape(roi, "red", return_probabilities=False)
@@ -446,8 +445,6 @@ if __name__ == '__main__':
     path = args.path
     outPath = args.out
     annotationsPath = args.annotations
-    if (annotationsPath[-1] != os.path.sep):
-        annotationsPath += os.path.sep
     
     verbose = args.verbose
     stackImages = args.stack
@@ -459,7 +456,7 @@ if __name__ == '__main__':
         filename, _extension = os.path.splitext(os.path.basename(path))
         
         if annotationsPath:
-            annot_dict = xp.parse(f'{annotationsPath}{filename}.xml')
+            annot_dict = xp.parse(os.path.join(annotationsPath, f"{filename}.xml"))
             
         results = detect_traffic_signs(
             name=filename,
