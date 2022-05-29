@@ -1,9 +1,12 @@
 from typing import List, NamedTuple, TypedDict
+from responses import target
 from torch.utils.data import Dataset
+
 import os
 
 import xml.etree.ElementTree as ET
 import numpy as np
+import torch
 from torchvision import transforms
 from torchvision.io import read_image, ImageReadMode
 import albumentations as A
@@ -18,15 +21,24 @@ class BoundingBox(NamedTuple):
     ymax: float
 
 class Annotation(TypedDict):
-    labels: List[str]
-    bbox: List[BoundingBox]
+    labels: List[int]
+    bboxes: List[List[float]]
+    areas: List[float]
 
-def parse_annotation(annotation_path):
+classes = {
+    "trafficlight": 0,
+    "speedlimit": 1,
+    "crosswalk": 2,
+    "stop": 3
+}
+
+def parse_annotation(annotation_path, return_biggest : bool = False) -> Annotation:
     root = ET.parse(annotation_path)
     
     annotation = Annotation(
         labels=[],
-        bbox=[]
+        bboxes=[],
+        areas=[]
     )
     
     size = root.find('size')
@@ -49,17 +61,32 @@ def parse_annotation(annotation_path):
             ymax=ymax / height
         )
 
-        annotation['labels'].append(label)
-        annotation['bbox'].append(bbox)
+        area = (bbox.ymax - bbox.ymin) * (bbox.xmax - bbox.xmin)
+
+        annotation['labels'].append(classes[label])
+        annotation['bboxes'].append(list(bbox))
+        annotation['areas'].append(area)
+
+    if return_biggest:
+        idx = np.argmax(annotation['areas'])
+        label = annotation['labels'][idx]
+        bbox = annotation['bboxes'][idx]
+        area = annotation['areas'][idx]
+        annotation = Annotation(
+            labels=[label],
+            bboxes=[bbox],
+            areas=[area]
+        )
 
     return annotation
 
 class RoadSignDataset(Dataset):
-    def __init__(self, images_filenames, images_directory, annotations_directory, use_transform : bool = True):
+    def __init__(self, images_filenames, images_directory, annotations_directory, use_transform : bool = True, multilabel : bool = False):
         self.images_filenames = images_filenames
         self.img_dir = images_directory
         self.annotations_dir = annotations_directory
         self.transform = None
+        self.multilabel = multilabel
         if use_transform:
             self.transform = A.Compose([
                 A.OneOf([ # COLOR AUGMENTATION
@@ -97,9 +124,11 @@ class RoadSignDataset(Dataset):
                 A.ToGray(p=0.05),
                 A.OneOf([ # SCALING AUGMENTATION
                 ], p=1.0),
+                A.PadIfNeeded(min_height=224, min_width=224, p=1.0),
+                A.RandomCrop(height=224, width=224, p=1.0),
                 A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # ImageNet normalization since DenseNet was trained with that
                 ToTensorV2()
-            ], p=1.0, bbox_params=A.BboxParams(format="albumentations", min_area=0, min_visibility=0, label_fields=["class_labels"]))
+            ], p=1.0, bbox_params=A.BboxParams(format="albumentations", min_area=0, min_visibility=0, label_fields=["class_labels", "areas"]))
 
     def __len__(self):
         return len(self.images_filenames)
@@ -110,23 +139,54 @@ class RoadSignDataset(Dataset):
 
         image = np.array(Image.open(img_path).convert("RGB"))
 
-        annotation = parse_annotation(os.path.join(self.annotations_dir, f"{image_filename}.xml"))
+        annotation = parse_annotation(os.path.join(self.annotations_dir, f"{image_filename}.xml"), not self.multilabel)
 
         if self.transform is not None:
-            print(image.shape)
-            transformed = self.transform(image=image, bboxes=annotation['bbox'], class_labels=annotation['labels'])
+            transformed = self.transform(image=image, bboxes=annotation['bboxes'], class_labels=annotation['labels'], areas=annotation['areas'])
             transformed_image = transformed["image"]
             transformed_bboxes = transformed["bboxes"]
             transformed_class_labels = transformed["class_labels"]
+            transformed_areas = transformed["areas"]
 
-            transformed_annotation = Annotation(
-                labels=transformed_class_labels,
-                bbox=transformed_bboxes
-            )
+            if not transformed_class_labels:
+                transformed_class_labels = [-1]
+                transformed_bboxes = [[-1, -1, -1, -1]]
+                transformed_areas = [-1]
 
+            target = {
+                "labels": torch.as_tensor(transformed_class_labels, dtype=torch.int64),
+                "bboxes": torch.as_tensor(transformed_bboxes, dtype=torch.float32),
+                "areas": torch.as_tensor(transformed_areas, dtype=torch.float32)
+            }
+
+        return transformed_image.float(), target
+
+    def collate_fn(self, batch):
+        images = list()
+        labels = list()
+        bboxes = list()
+        areas = list()
+
+
+        for b in batch:
+            images.append(b[0])
+            target = b[1]
+            labels.append(target["labels"])
+            bboxes.append(target["bboxes"])
+            areas.append(target["areas"])
+
+        images = torch.stack(images, dim=0)
+        if not self.multilabel:
+            labels = torch.stack(labels, dim=1)
+            bboxes = torch.stack(bboxes, dim=1)
+            areas = torch.stack(areas, dim=1)
+
+        target = {
+            "labels": labels,
+            "bboxes": bboxes,
+            "areas": areas,
+        }
         
-        return transformed_image.float(), transformed_annotation
+        return images, target
 
 
-
-        

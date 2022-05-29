@@ -6,6 +6,7 @@ import torch
 from torch import nn
 from torchvision import models
 import numpy as np
+from tqdm import tqdm
 
 from deeplearning.utils.utils import epoch_iter, progress_bar
 
@@ -17,14 +18,15 @@ class ScoreHistory(TypedDict):
     loss: List[float]
     metric: List[float]
 
-class BasicModel():
+class BasicModel(nn.Module):
     def __init__(self, model, pretrained, n_classes, hyperparameters: Hyperparameters):
+        super(BasicModel, self).__init__()
         self.model_name = model
         self.model = models.densenet201(pretrained=pretrained)
 
         self.model.classifier = nn.Linear(in_features=1920, out_features=n_classes, bias=True)
 
-        self.loss_fn = nn.CrossEntropyLoss()
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
 
         self.optimizer = torch.optim.SGD(self.model.parameters(),
             lr=hyperparameters['learning_rate'],
@@ -36,11 +38,38 @@ class BasicModel():
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
+    def train(self, mode: bool = True):
+        self.model.train(mode)
+        return super().train(mode)
+
+    def eval(self):
+        self.model.train(False)
+        return super().eval()
+
+    def forward(self, x):
+        logits = self.model(x)
+        return logits
+
     def freeze_feature_layer(self):
         self.model.features.requires_grad_(False)
     def unfreeze_feature_layer(self):
         self.model.features.requires_grad_(True)
 
+    def epoch_iter(self, dataloader):
+        num_batches = len(dataloader)
+
+        total_loss = 0.0
+        preds = []
+        labels = []
+
+        with torch.set_grad_enabled(self.training):
+            for batch, (X, y) in enumerate(tqdm(dataloader)):
+                labels = y["labels"]
+                X, y = X.to(self.device), labels.to(self.device)
+
+
+        
+        
 
     def train(self, num_epochs: int, train_dataloader, validation_dataloader, verbose=True):
         train_history = ScoreHistory()
@@ -58,8 +87,8 @@ class BasicModel():
         for epoch in range(num_epochs):
             progress_bar(epoch, num_epochs)
             
-            train_loss, train_acc = epoch_iter(train_dataloader, self.model, self.loss_fn, self.optimizer)
-            val_loss, val_acc = epoch_iter(validation_dataloader, self.model, self.loss_fn, is_train=False)
+            train_loss, train_acc = epoch_iter(train_dataloader)
+            val_loss, val_acc = epoch_iter(validation_dataloader, is_train=False)
 
             sys.stdout.write(
                 f"Training loss: {train_loss:.3f} \t Training accuracy: {train_acc:.3f}\n"
