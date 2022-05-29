@@ -1,5 +1,4 @@
 from typing import List, NamedTuple, TypedDict
-from responses import target
 from torch.utils.data import Dataset
 
 import os
@@ -7,8 +6,6 @@ import os
 import xml.etree.ElementTree as ET
 import numpy as np
 import torch
-from torchvision import transforms
-from torchvision.io import read_image, ImageReadMode
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 import cv2
@@ -25,14 +22,7 @@ class Annotation(TypedDict):
     bboxes: List[List[float]]
     areas: List[float]
 
-classes = {
-    "trafficlight": 0,
-    "speedlimit": 1,
-    "crosswalk": 2,
-    "stop": 3
-}
-
-def parse_annotation(annotation_path, return_biggest : bool = False) -> Annotation:
+def parse_annotation(annotation_path, classes, return_biggest : bool = False) -> Annotation:
     root = ET.parse(annotation_path)
     
     annotation = Annotation(
@@ -81,13 +71,20 @@ def parse_annotation(annotation_path, return_biggest : bool = False) -> Annotati
     return annotation
 
 class RoadSignDataset(Dataset):
-    def __init__(self, images_filenames, images_directory, annotations_directory, use_transform : bool = True, multilabel : bool = False):
+    def __init__(self, images_filenames, images_directory, annotations_directory, is_train : bool = True, multilabel : bool = False):
         self.images_filenames = images_filenames
         self.img_dir = images_directory
         self.annotations_dir = annotations_directory
         self.transform = None
         self.multilabel = multilabel
-        if use_transform:
+
+        self.classes = {
+            "trafficlight": 0,
+            "speedlimit": 1,
+            "crosswalk": 2,
+            "stop": 3
+        }
+        if is_train:
             self.transform = A.Compose([
                 A.OneOf([ # COLOR AUGMENTATION
                     A.Posterize(num_bits=4, p=0.4),
@@ -130,6 +127,13 @@ class RoadSignDataset(Dataset):
                 ToTensorV2()
             ], p=1.0, bbox_params=A.BboxParams(format="albumentations", min_area=0, min_visibility=0, label_fields=["class_labels", "areas"]))
 
+        else:
+            self.transform = A.Compose([
+                A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # ImageNet normalization since DenseNet was trained with that
+                ToTensorV2()
+            ], p=1.0, bbox_params=A.BboxParams(format="albumentations", min_area=0, min_visibility=0, label_fields=["class_labels", "areas"]))
+
+
     def __len__(self):
         return len(self.images_filenames)
 
@@ -139,7 +143,7 @@ class RoadSignDataset(Dataset):
 
         image = np.array(Image.open(img_path).convert("RGB"))
 
-        annotation = parse_annotation(os.path.join(self.annotations_dir, f"{image_filename}.xml"), not self.multilabel)
+        annotation = parse_annotation(os.path.join(self.annotations_dir, f"{image_filename}.xml"), classes=self.classes, return_biggest=(not self.multilabel))
 
         if self.transform is not None:
             transformed = self.transform(image=image, bboxes=annotation['bboxes'], class_labels=annotation['labels'], areas=annotation['areas'])
@@ -177,9 +181,9 @@ class RoadSignDataset(Dataset):
 
         images = torch.stack(images, dim=0)
         if not self.multilabel:
-            labels = torch.stack(labels, dim=1)
-            bboxes = torch.stack(bboxes, dim=1)
-            areas = torch.stack(areas, dim=1)
+            labels = torch.stack(labels, dim=1)[0]
+            bboxes = torch.stack(bboxes, dim=1)[0]
+            areas = torch.stack(areas, dim=1)[0]
 
         target = {
             "labels": labels,
