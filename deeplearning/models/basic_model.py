@@ -76,8 +76,8 @@ class BasicModel:
         return total_loss / num_batches, self.metric_scorer(true_labels, preds)
 
     def train(self, num_epochs: int, train_dataloader, validation_dataloader, verbose=True, out_dir: str = "./"):
-        train_history = ScoreHistory()
-        val_history = ScoreHistory()
+        train_history = ScoreHistory(loss=[], metric=[])
+        val_history = ScoreHistory(loss=[], metric=[])
 
         best_val_loss = np.inf
         best_accuracy = 0
@@ -89,6 +89,8 @@ class BasicModel:
         )
 
         for epoch in range(num_epochs):
+            print(f"Epoch {epoch}")
+
             progress_bar(epoch, num_epochs)
 
             train_loss, train_acc = self.epoch_iter(train_dataloader)
@@ -120,7 +122,7 @@ class BasicModel:
             val_history["loss"].append(val_loss)
             val_history["metric"].append(val_acc)
 
-        progress_bar(epoch, num_epochs, finished=True)
+        progress_bar(epoch + 1, num_epochs, finished=True)
         print(
             f"Finished training...\n"
             f"Best loss: {best_val_loss}\tAccuracy on best loss: {best_accuracy}\n"

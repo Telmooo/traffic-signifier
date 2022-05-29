@@ -114,11 +114,12 @@ if __name__ == "__main__":
         out_dir=OUT_DIR
     )
 
-    plotTrainingHistory(train_history, val_history)
+    plotTrainingHistory(train_history, val_history, metric="accuracy")
 
     # Testing phase
+    print("\nStarting testing phase...\n")
     best_model = BasicModel(model="best_basic_fine_tuned", pretrained=True,
-                            n_classes=4, hyperparameters=Hyperparameters)
+                            n_classes=4, hyperparameters=hyperparameters)
 
     checkpoint = torch.load(f"{OUT_DIR}/{model.model_name}_best_model.pth")
     best_model.load_state_dict(checkpoint["model"])
