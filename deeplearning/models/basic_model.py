@@ -11,14 +11,14 @@ from utils.utils import progress_bar
 
 
 class BasicModel:
-    def __init__(self, model, pretrained, n_classes, hyperparameters: Hyperparameters):
+    def __init__(self, model : str, pretrained : bool, n_classes : int, hyperparameters: Hyperparameters):
         self.model_name = model
         self.model = models.densenet201(pretrained=pretrained)
-
+        self.n_classes = n_classes
         self.model.classifier = nn.Linear(
-            in_features=1920, out_features=n_classes, bias=True)
+            in_features=1920, out_features=self.n_classes, bias=True)
 
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=0)
 
         self.optimizer = torch.optim.SGD(self.model.parameters(),
                                          lr=hyperparameters['learning_rate'],

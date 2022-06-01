@@ -19,7 +19,7 @@ class BoundingBox(NamedTuple):
 
 class Annotation(TypedDict):
     labels: List[int]
-    bboxes: List[List[float]]
+    boxes: List[List[float]]
     areas: List[float]
 
 def parse_annotation(annotation_path, classes, return_biggest : bool = False) -> Annotation:
@@ -27,7 +27,7 @@ def parse_annotation(annotation_path, classes, return_biggest : bool = False) ->
     
     annotation = Annotation(
         labels=[],
-        bboxes=[],
+        boxes=[],
         areas=[]
     )
     
@@ -45,26 +45,26 @@ def parse_annotation(annotation_path, classes, return_biggest : bool = False) ->
         ymax = float(bndbox.find('ymax').text)
 
         bbox = BoundingBox(
-            xmin=xmin / width,
-            ymin=ymin / height,
-            xmax=xmax / width,
-            ymax=ymax / height
+            xmin=xmin,
+            ymin=ymin,
+            xmax=xmax,
+            ymax=ymax
         )
 
         area = (bbox.ymax - bbox.ymin) * (bbox.xmax - bbox.xmin)
 
         annotation['labels'].append(classes[label])
-        annotation['bboxes'].append(list(bbox))
+        annotation['boxes'].append(list(bbox))
         annotation['areas'].append(area)
 
     if return_biggest:
         idx = np.argmax(annotation['areas'])
         label = annotation['labels'][idx]
-        bbox = annotation['bboxes'][idx]
+        bbox = annotation['boxes'][idx]
         area = annotation['areas'][idx]
         annotation = Annotation(
             labels=[label],
-            bboxes=[bbox],
+            boxes=[bbox],
             areas=[area]
         )
 
@@ -79,10 +79,11 @@ class RoadSignDataset(Dataset):
         self.multilabel = multilabel
 
         self.classes = {
-            "trafficlight": 0,
-            "speedlimit": 1,
-            "crosswalk": 2,
-            "stop": 3
+            "background": 0,
+            "trafficlight": 1,
+            "speedlimit": 2,
+            "crosswalk": 3,
+            "stop": 4
         }
         if is_train:
             self.transform = A.Compose([
@@ -125,13 +126,13 @@ class RoadSignDataset(Dataset):
                 A.RandomCrop(height=224, width=224, p=1.0),
                 A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # ImageNet normalization since DenseNet was trained with that
                 ToTensorV2()
-            ], p=1.0, bbox_params=A.BboxParams(format="albumentations", min_area=0, min_visibility=0, label_fields=["class_labels", "areas"]))
+            ], p=1.0, bbox_params=A.BboxParams(format="pascal_voc", min_area=0, min_visibility=0, label_fields=["class_labels", "areas"]))
 
         else:
             self.transform = A.Compose([
                 A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # ImageNet normalization since DenseNet was trained with that
                 ToTensorV2()
-            ], p=1.0, bbox_params=A.BboxParams(format="albumentations", min_area=0, min_visibility=0, label_fields=["class_labels", "areas"]))
+            ], p=1.0, bbox_params=A.BboxParams(format="pascal_voc", min_area=0, min_visibility=0, label_fields=["class_labels", "areas"]))
 
 
     def __len__(self):
@@ -146,51 +147,51 @@ class RoadSignDataset(Dataset):
         annotation = parse_annotation(os.path.join(self.annotations_dir, f"{image_filename}.xml"), classes=self.classes, return_biggest=(not self.multilabel))
 
         if self.transform is not None:
-            transformed = self.transform(image=image, bboxes=annotation['bboxes'], class_labels=annotation['labels'], areas=annotation['areas'])
+            transformed = self.transform(image=image, bboxes=annotation['boxes'], class_labels=annotation['labels'], areas=annotation['areas'])
             transformed_image = transformed["image"]
-            transformed_bboxes = transformed["bboxes"]
+            transformed_boxes = transformed["bboxes"]
             transformed_class_labels = transformed["class_labels"]
             transformed_areas = transformed["areas"]
 
             if not transformed_class_labels:
-                transformed_class_labels = [-1]
-                transformed_bboxes = [[-1, -1, -1, -1]]
+                transformed_class_labels = [0]
+                transformed_boxes = [[-1, -1, -1, -1]]
                 transformed_areas = [-1]
 
             target = {
                 "labels": torch.as_tensor(transformed_class_labels, dtype=torch.int64),
-                "bboxes": torch.as_tensor(transformed_bboxes, dtype=torch.float32),
+                "boxes": torch.as_tensor(transformed_boxes, dtype=torch.float32),
                 "areas": torch.as_tensor(transformed_areas, dtype=torch.float32)
             }
 
         return transformed_image.float(), target
 
     def collate_fn(self, batch):
+        if self.multilabel:        
+            return tuple(zip(*batch))
+
         images = list()
         labels = list()
-        bboxes = list()
+        boxes = list()
         areas = list()
-
-
         for b in batch:
             images.append(b[0])
             target = b[1]
             labels.append(target["labels"])
-            bboxes.append(target["bboxes"])
+            boxes.append(target["boxes"])
             areas.append(target["areas"])
 
         images = torch.stack(images, dim=0)
-        if not self.multilabel:
-            labels = torch.stack(labels, dim=1)[0]
-            bboxes = torch.stack(bboxes, dim=1)[0]
-            areas = torch.stack(areas, dim=1)[0]
+        labels = torch.stack(labels, dim=1)[0]
+        boxes = torch.stack(boxes, dim=1)[0]
+        areas = torch.stack(areas, dim=1)[0]
 
-        target = {
+        targets = {
             "labels": labels,
-            "bboxes": bboxes,
+            "boxes": boxes,
             "areas": areas,
         }
         
-        return images, target
+        return images, targets
 
 
