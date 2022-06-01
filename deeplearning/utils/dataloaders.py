@@ -1,3 +1,4 @@
+from tarfile import LENGTH_PREFIX
 from typing import List, NamedTuple, TypedDict
 from torch.utils.data import Dataset
 
@@ -71,20 +72,32 @@ def parse_annotation(annotation_path, classes, return_biggest : bool = False) ->
     return annotation
 
 class RoadSignDataset(Dataset):
-    def __init__(self, images_filenames, images_directory, annotations_directory, is_train : bool = True, multilabel : bool = False):
+    def __init__(self, images_filenames, images_directory, annotations_directory, is_train : bool = True, multilabel : bool = False, obj_detect : bool = False, all_labels : list = None):
         self.images_filenames = images_filenames
         self.img_dir = images_directory
         self.annotations_dir = annotations_directory
         self.transform = None
+        
+        # classifier type indicators
         self.multilabel = multilabel
-
-        self.classes = {
-            "background": 0,
-            "trafficlight": 1,
-            "speedlimit": 2,
-            "crosswalk": 3,
-            "stop": 4
-        }
+        self.obj_detect = obj_detect
+        
+        if obj_detect:
+            self.classes = {
+                "background": 0,
+                "trafficlight": 1,
+                "speedlimit": 2,
+                "crosswalk": 3,
+                "stop": 4
+            }
+        else:
+            self.classes = {
+                "trafficlight": 0,
+                "speedlimit": 1,
+                "crosswalk": 2,
+                "stop": 3
+            }
+            
         if is_train:
             self.transform = A.Compose([
                 A.OneOf([ # COLOR AUGMENTATION
@@ -152,12 +165,19 @@ class RoadSignDataset(Dataset):
             transformed_boxes = transformed["bboxes"]
             transformed_class_labels = transformed["class_labels"]
             transformed_areas = transformed["areas"]
+            
 
             if not transformed_class_labels:
-                transformed_class_labels = [0]
+                transformed_class_labels = [0 for x in range(len(self.classes))] if self.multilabel else [-1]
                 transformed_boxes = [[-1, -1, -1, -1]]
                 transformed_areas = [-1]
-
+                
+            if self.multilabel:
+                labels = [0 for _ in range(len(self.classes))]
+                for c in transformed_class_labels:
+                    labels[c] = 1
+                transformed_class_labels = labels
+            print(torch.as_tensor(transformed_class_labels))
             target = {
                 "labels": torch.as_tensor(transformed_class_labels, dtype=torch.int64),
                 "boxes": torch.as_tensor(transformed_boxes, dtype=torch.float32),
@@ -167,7 +187,7 @@ class RoadSignDataset(Dataset):
         return transformed_image.float(), target
 
     def collate_fn(self, batch):
-        if self.multilabel:        
+        if self.multilabel:  
             return tuple(zip(*batch))
 
         images = list()

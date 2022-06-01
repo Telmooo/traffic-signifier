@@ -5,10 +5,13 @@ if __name__ == "__main__":
     from torch.utils.data.sampler import SubsetRandomSampler
     import numpy as np
 
-    from models.basic_obj_det_model import BasicObjDectModel
+    from models.basic_model import BasicModel
     from models.common import Hyperparameters
     from utils.dataloaders import RoadSignDataset
+    from utils.plot import plotTrainingHistory
     
+    from models.advanced_model import AdvancedModel
+
     DATA_DIR = "../data/"
     IMG_DIR = DATA_DIR + "/images/"
     ANNOTATION_DIR = DATA_DIR + "/annotations/"
@@ -32,7 +35,6 @@ if __name__ == "__main__":
         images_directory=IMG_DIR,
         annotations_directory=ANNOTATION_DIR,
         is_train=True,
-        obj_detect=True,
         multilabel=True
     )
 
@@ -41,7 +43,6 @@ if __name__ == "__main__":
         images_directory=IMG_DIR,
         annotations_directory=ANNOTATION_DIR,
         is_train=False,
-        obj_detect=True,
         multilabel=True
     )
 
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     val_sampler = SubsetRandomSampler(val_idx)
 
     # DataLoaders
-    BATCH_SIZE = 4
+    BATCH_SIZE = 32
     NUM_WORKERS = 2
 
     train_dataloader = DataLoader(
@@ -95,21 +96,38 @@ if __name__ == "__main__":
         momentum=0
     )
 
-    model = BasicObjDectModel(
-        model="basic_obj_dect",
+    model = AdvancedModel(
+        model="basic_fine_tuned",
+        pretrained=True,
         n_classes=4,
         hyperparameters=hyperparameters
     )
 
     # Training phase
     NUM_EPOCHS = 10
-    
-    model.freeze_backbone_layer()
 
-    model.train(
+    model.freeze_feature_layer()
+
+    train_history, val_history = model.train(
         num_epochs=NUM_EPOCHS,
         train_dataloader=train_dataloader,
         validation_dataloader=val_dataloader,
         verbose=True,
         out_dir=OUT_DIR
     )
+
+    plotTrainingHistory(train_history, val_history, metric="accuracy")
+
+    # Testing phase
+    print("\nStarting testing phase...\n")
+    best_model = BasicModel(model="best_basic_fine_tuned", pretrained=True,
+                            n_classes=4, hyperparameters=hyperparameters)
+
+    checkpoint = torch.load(f"{OUT_DIR}/{model.model_name}_best_model.pth")
+    best_model.load_state_dict(checkpoint["model"])
+
+    test_loss, test_acc = best_model.test(
+        test_dataloader=test_dataloader
+    )
+
+    print(f"\nTest Loss: {test_loss:.3f} \nTest Accuracy: {test_acc:.3f}")

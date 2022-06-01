@@ -10,7 +10,7 @@ from models.common import Hyperparameters, ScoreHistory
 from utils.utils import progress_bar
 
 
-class BasicModel:
+class AdvancedModel:
     def __init__(self, model : str, pretrained : bool, n_classes : int, hyperparameters: Hyperparameters):
         self.model_name = model
         self.model = models.densenet201(pretrained=pretrained)
@@ -18,7 +18,7 @@ class BasicModel:
         self.model.classifier = nn.Linear(
             in_features=1920, out_features=self.n_classes, bias=True)
 
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
+        self.loss_fn = nn.BCELoss()
 
         self.optimizer = torch.optim.SGD(self.model.parameters(),
                                          lr=hyperparameters['learning_rate'],
@@ -53,26 +53,35 @@ class BasicModel:
             self.model.eval()
 
         with torch.set_grad_enabled(is_train):
-            for _batch, (X, y) in enumerate(tqdm(dataloader)):
-                print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx\n", X)
-                print("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY\n", y)
-                labels = y["labels"]
+            for _i, (X, y) in enumerate(tqdm(dataloader)):
+                
+                # print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx\n", X)
+                # print("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY\n", y)
+                
+                # X = list(x.to(self.device) for x in X)
+                # y = [ { k: v.to(self.device) for k, v in annotation.items() } for annotation in y]
+                # print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx\n", X)
+                # print("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY\n", y)
+                # labels = y["labels"]
 
-                X, y = X.to(self.device), labels.to(self.device)
+                # X, y = X.to(self.device), labels.to(self.device)
 
                 pred = self.model(X)
-                loss = self.loss_fn(pred, y)
 
                 if is_train:
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
 
+
+                # get all values between 0 and 1
+                final_pred = torch.sigmoid(pred)
+                loss = self.loss_fn(final_pred, y)
+                
                 total_loss += loss.item()
-
-                probs = F.softmax(pred, dim=1)
-                final_pred = torch.argmax(probs, dim=1)
-
+                
+                print(final_pred)
+                exit(0)
                 preds.extend(final_pred.cpu().numpy())
                 true_labels.extend(y.cpu().numpy())
 
