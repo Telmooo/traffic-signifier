@@ -58,7 +58,7 @@ if __name__ == "__main__":
     val_sampler = SubsetRandomSampler(val_idx)
 
     # DataLoaders
-    BATCH_SIZE = 32
+    BATCH_SIZE = 2
     NUM_WORKERS = 2
 
     train_dataloader = DataLoader(

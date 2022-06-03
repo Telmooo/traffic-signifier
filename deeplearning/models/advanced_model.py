@@ -1,4 +1,5 @@
 from sklearn.metrics import accuracy_score
+from torchmetrics import Accuracy
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -25,7 +26,11 @@ class AdvancedModel:
                                          momentum=hyperparameters['momentum']
                                          )
 
-        self.metric_scorer = accuracy_score
+        self.metric_scorer = Accuracy(
+            threshold=0.5,
+            num_classes=self.n_classes,
+            average="macro"
+        )
 
         self.device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
@@ -55,33 +60,32 @@ class AdvancedModel:
         with torch.set_grad_enabled(is_train):
             for _i, (X, y) in enumerate(tqdm(dataloader)):
                 
-                # print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx\n", X)
-                # print("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY\n", y)
+                labels = y["labels"]
                 
-                # X = list(x.to(self.device) for x in X)
-                # y = [ { k: v.to(self.device) for k, v in annotation.items() } for annotation in y]
-                # print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx\n", X)
+                X, y = [x.to(self.device) for x in X], labels.to(self.device);
+                print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx\n", X)
                 # print("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY\n", y)
                 # labels = y["labels"]
 
                 # X, y = X.to(self.device), labels.to(self.device)
+                # print(y)
 
                 pred = self.model(X)
 
-                if is_train:
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
+               
 
 
-                # get all values between 0 and 1
+                # sigmoid activation to get values between 0 and 1
                 final_pred = torch.sigmoid(pred)
                 loss = self.loss_fn(final_pred, y)
                 
                 total_loss += loss.item()
                 
-                print(final_pred)
-                exit(0)
+                if is_train:
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+                
                 preds.extend(final_pred.cpu().numpy())
                 true_labels.extend(y.cpu().numpy())
 

@@ -177,7 +177,7 @@ class RoadSignDataset(Dataset):
                 for c in transformed_class_labels:
                     labels[c] = 1
                 transformed_class_labels = labels
-            print(torch.as_tensor(transformed_class_labels))
+                
             target = {
                 "labels": torch.as_tensor(transformed_class_labels, dtype=torch.int64),
                 "boxes": torch.as_tensor(transformed_boxes, dtype=torch.float32),
@@ -187,8 +187,29 @@ class RoadSignDataset(Dataset):
         return transformed_image.float(), target
 
     def collate_fn(self, batch):
-        if self.multilabel:  
+        if self.obj_detect:  
             return tuple(zip(*batch))
+        
+        if (self.multilabel):
+            images = list()
+            labels = list()
+            
+            for b in batch:
+                images.append(b[0])
+                target = b[1]
+                labels.append(target["labels"])
+
+            images = torch.stack(images, dim=0)
+            labels = torch.stack(labels, dim=0)
+
+            targets = {
+                "labels": labels,
+            }
+            
+            print(targets)
+            
+            return images, targets
+            
 
         images = list()
         labels = list()
