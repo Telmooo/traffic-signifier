@@ -93,7 +93,9 @@ if __name__ == "__main__":
     # Model
     hyperparameters = Hyperparameters(
         learning_rate=1e-3,
-        momentum=0
+        betas=(0.9, 0.999),
+        weight_decay=5e-4,
+        amsgrad=True,
     )
 
     model = AdvancedModel(
