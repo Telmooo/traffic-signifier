@@ -21,9 +21,12 @@ class AdvancedModel:
 
         self.loss_fn = nn.BCELoss()
 
-        self.optimizer = torch.optim.SGD(self.model.parameters(),
-                                         lr=hyperparameters['learning_rate'],
-                                         momentum=hyperparameters['momentum']
+        self.optimizer = torch.optim.Adam(
+                                            self.model.parameters(),
+                                            lr=hyperparameters['learning_rate'],
+                                            betas=hyperparameters['betas'],
+                                            weight_decay=hyperparameters['weight_decay'],
+                                            amsgrad=hyperparameters['amsgrad']
                                          )
 
         self.metric_scorer = Accuracy(
@@ -62,8 +65,7 @@ class AdvancedModel:
                 
                 labels = y["labels"]
                 
-                X, y = [x.to(self.device) for x in X], labels.to(self.device);
-                print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx\n", X)
+                X, y = X.to(self.device), labels.to(self.device);
                 # print("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY\n", y)
                 # labels = y["labels"]
 
@@ -72,12 +74,11 @@ class AdvancedModel:
 
                 pred = self.model(X)
 
-               
-
-
                 # sigmoid activation to get values between 0 and 1
-                final_pred = torch.sigmoid(pred)
-                loss = self.loss_fn(final_pred, y)
+                sig = nn.Sigmoid()
+                
+                # print(y.dtype)
+                loss = self.loss_fn(sig(pred), y.float())
                 
                 total_loss += loss.item()
                 
@@ -86,10 +87,11 @@ class AdvancedModel:
                     loss.backward()
                     self.optimizer.step()
                 
-                preds.extend(final_pred.cpu().numpy())
-                true_labels.extend(y.cpu().numpy())
+                preds.extend(pred.detach().cpu().numpy())
+                true_labels.extend(y.detach().cpu().numpy())
 
-        return total_loss / num_batches, self.metric_scorer(true_labels, preds)
+        print(torch.tensor(np.array(true_labels)))
+        return total_loss / num_batches, self.metric_scorer(torch.tensor(np.array(preds)), torch.tensor(np.array(true_labels)) )
 
     def train(self, num_epochs: int, train_dataloader, validation_dataloader, verbose=True, out_dir: str = "./"):
         train_history = ScoreHistory(loss=[], metric=[])
