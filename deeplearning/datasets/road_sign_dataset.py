@@ -18,15 +18,16 @@ class RoadSignDataset(Dataset):
     annotation_dir: str
     is_train: bool
     multilabel: bool
+    obj_detection: bool
     classes: Dict[str, int]
-
-    def __init__(self, img_names: List[str], img_dir: str, annotation_dir: str, classes: Dict[str, int], is_train: bool = True, multilabel: bool = True) -> None:
+    def __init__(self, img_names: List[str], img_dir: str, annotation_dir: str, classes: Dict[str, int], is_train: bool = True, multilabel: bool = True, obj_detection : bool = False) -> None:
         self.img_names = img_names
         self.img_dir = img_dir
         self.annotation_dir = annotation_dir
         self.classes = classes
         self.is_train = is_train
         self.multilabel = multilabel
+        self.obj_detection = obj_detection
 
         self.transform = None
         if is_train:
@@ -112,6 +113,16 @@ class RoadSignDataset(Dataset):
         transformed_labels = transformed["class_labels"]
         transformed_areas = transformed["areas"]
 
+        if self.multilabel:
+            labels = [0] * len(self.classes)
+            for label in transformed_labels:
+                labels[label] = 1
+            
+            transformed_labels = labels
+
+            transformed_boxes = [[0, 0, img_width, img_height]]
+            transformed_areas = [img_width * img_height]
+
         if not transformed_labels:
             transformed_labels = [self.classes["background"]]
             transformed_boxes = [[0, 0, img_width, img_height]]
@@ -127,8 +138,30 @@ class RoadSignDataset(Dataset):
         return transformed_img.float(), target
 
     def collate_fn(self, batch):
-        if self.multilabel:
+        if self.obj_detection:
             return tuple(zip(*batch))
+
+        if self.multilabel:
+            images = list()
+            labels = list()
+            imageIds = list()
+
+            for item in batch:
+                images.append(item[0])
+                target = item[1]
+                labels.append(target["labels"])        
+                imageIds.append(target["imageId"])
+
+            
+            images = torch.stack(images, dim=0)
+            labels = torch.stack(labels, dim=0)
+            imageIds = torch.stack(imageIds, dim=0)
+
+            targets = {
+                "labels": labels,
+                "imageIds": imageIds
+            }
+            return images, targets
 
         images = list()
         labels = list()
