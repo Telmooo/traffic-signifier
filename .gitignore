@@ -1,5 +1,9 @@
 data/annotations/
-data/images/
+data/images/*
+data/labels/*
+
+data/test
+data/train
 
 out/
 

@@ -1,0 +1,6 @@
+path: "../../data/images"
+train: "train"
+val: "train" # TODO create dir with val images
+# test: "test"
+nc : 4
+names: [ "trafficlight", "speedlimit", "crosswalk", "stop"]
