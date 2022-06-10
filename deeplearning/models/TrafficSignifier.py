@@ -13,21 +13,21 @@ class _TrafficSignifierConv2d(nn.Module):
                                 kernel_size=kernel_size, bias=True, **kwargs)
         self.bnorm = nn.BatchNorm2d(
             num_features=out_channels, eps=1e-4, momentum=1e-1, affine=True)
-        self.gelu = nn.GELU()
+        self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.conv2d(x)
         x = self.bnorm(x)
-        x = self.gelu(x)
+        x = self.relu(x)
         return x
 
 class _TrafficSignifierPooledConv2d(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, kernel_size: Union[int, Tuple[int, int]]) -> None:
         super().__init__()
 
-        self.pooling = nn.AvgPool2d(kernel_size=3, stride=1, padding=0)
+        self.pooling = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)
         self.conv = _TrafficSignifierConv2d(
-            in_channels=in_channels - 2, # Result of Average Pooling
+            in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
         )
@@ -44,13 +44,14 @@ class _TrafficSignifierLayer(nn.Module):
         self.conv2d_1x1 = _TrafficSignifierConv2d(
             in_channels=in_channels,
             out_channels=out_channels * growth_rate,
-            kernel_size=1
+            kernel_size=1,
+            padding=kernel_size//2
         )
 
         self.conv2d_nxn = _TrafficSignifierConv2d(
             in_channels=out_channels * growth_rate,
             out_channels=out_channels,
-            kernel_size=kernel_size
+            kernel_size=kernel_size,
         )
 
         self.dropout_rate = float(dropout_rate)
@@ -132,7 +133,7 @@ class TrafficSignifier(nn.Module):
                     kernel_size=3,
                     stride=2
                 )),
-                ("gelu0", nn.GELU()),
+                ("relu0", nn.ReLU(inplace=True)),
                 ("pool0", nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
             ])
         )
@@ -150,13 +151,13 @@ class TrafficSignifier(nn.Module):
 
             input_size += 64 + pool_out_channels + 32 * num_internal_layers
 
-        self.features_gelu = nn.GELU()
+        self.features_relu = nn.ReLU(inplace=True)
         self.adapt_avgpool = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Linear(in_features=input_size, out_features=num_classes, bias=True)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.features(x)
-        x = self.features_gelu(x)
+        x = self.features_relu(x)
         x = self.adapt_avgpool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
