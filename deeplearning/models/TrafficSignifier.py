@@ -13,7 +13,7 @@ class _TrafficSignifierConv2d(nn.Module):
                                 kernel_size=kernel_size, bias=True, **kwargs)
         self.bnorm = nn.BatchNorm2d(
             num_features=out_channels, eps=1e-4, momentum=1e-1, affine=True)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.conv2d(x)
@@ -133,7 +133,7 @@ class TrafficSignifier(nn.Module):
                     kernel_size=3,
                     stride=2
                 )),
-                ("relu0", nn.ReLU(inplace=True)),
+                ("relu0", nn.ReLU(inplace=False)),
                 ("pool0", nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
             ])
         )
@@ -151,7 +151,7 @@ class TrafficSignifier(nn.Module):
 
             input_size += 64 + pool_out_channels + 32 * num_internal_layers
 
-        self.features_relu = nn.ReLU(inplace=True)
+        self.features_relu = nn.ReLU(inplace=False)
         self.adapt_avgpool = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Linear(in_features=input_size, out_features=num_classes, bias=True)
 

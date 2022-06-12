@@ -96,7 +96,7 @@ class RoadSignDataset(Dataset):
         annotation = parse_annotation(
             annotation_path=os.path.join(self.annotation_dir, f"{img_name}.xml"),
             classes=self.classes,
-            return_biggest=(not self.multilabel)
+            return_biggest=(not self.multilabel and not self.obj_detection )
         )
 
         img_width, img_height = annotation["width"], annotation["height"]
