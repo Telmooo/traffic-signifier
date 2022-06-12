@@ -2,6 +2,8 @@ data/annotations/
 data/images/*
 data/labels/*
 
+deeplearning/models/yolov5
+
 data/test
 data/train
 
